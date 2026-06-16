@@ -24,7 +24,7 @@
       try { path = new URL(a.href).pathname; } catch (e) { return; }
       if (seen[path]) return;
       // считаем только страницы-уроки (внутри фаз/практикума)
-      if (!/\/(phase\d|practicum)\//.test(path)) return;
+      if (!/\/(phase\d|practicum|workshops)\//.test(path)) return;
       seen[path] = true;
       total += 1;
       if (isDone(path)) done += 1;
@@ -49,7 +49,7 @@
     var h1 = article.querySelector("h1");
     if (!h1) return;
     // только на страницах-уроках
-    if (!/\/(phase\d|practicum)\//.test(location.pathname)) return;
+    if (!/\/(phase\d|practicum|workshops)\//.test(location.pathname)) return;
     if (article.querySelector(".lesson-progress")) return;
 
     var btn = document.createElement("button");

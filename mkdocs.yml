@@ -128,3 +128,15 @@ nav:
       - "M28 · Специализация": phase7/m28-specialization.md
   - "Практикум":
       - "M29 · Kaggle и Hugging Face": practicum/m29-kaggle-huggingface.md
+  - "Воркшопы":
+      - "Обзор трека": workshops/index.md
+      - "W1 · Retention-когорты с нуля": workshops/w1-retention-cohorts.md
+      - "W2 · A/B-тест end-to-end": workshops/w2-ab-test.md
+      - "W3 · Churn-модель игроков": workshops/w3-churn-model.md
+      - "W4 · Сегментация RFM + кластеры": workshops/w4-segmentation.md
+      - "W5 · Прогноз LTV и выручки": workshops/w5-ltv-forecast.md
+      - "W6 · Антифрод: поиск аномалий": workshops/w6-anomaly-fraud.md
+      - "W7 · RAG-ассистент": workshops/w7-rag-assistant.md
+      - "W8 · Деплой модели + мониторинг дрейфа": workshops/w8-deploy-monitoring.md
+      - "W9 · Quant: честный бэктест": workshops/w9-quant-backtest.md
+      - "W10 · Kaggle capstone": workshops/w10-kaggle-capstone.md
