@@ -1,0 +1,130 @@
+site_name: DS Academy
+site_description: Путь в Data Science от полного нуля до research-level. Лекции, конспекты, практика, актуальный стек 2026 и сквозная линия AI-копилота.
+site_author: fdsov
+site_url: https://fdsov.github.io/ds-academy/
+repo_url: https://github.com/fdsov/ds-academy
+repo_name: fdsov/ds-academy
+copyright: Личная учебная платформа. Учись честно — извлекай, объясняй, практикуй.
+
+theme:
+  name: material
+  language: ru
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Тёмная тема
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Светлая тема
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search:
+      lang:
+        - ru
+        - en
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - footnotes
+  - tables
+  - def_list
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.caret
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.tilde
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Главная: index.md
+  - Как учиться: methodology.md
+  - Программа курса: curriculum.md
+  - "Фаза 0 · Фундамент":
+      - "M0 · Мышление data scientist": phase0/m0-mindset.md
+      - "M1 · Среда 2026": phase0/m1-environment-2026.md
+      - "M2 · Python для DS": phase0/m2-python-for-ds.md
+      - "M3 · Математика-фундамент": phase0/m3-math-foundations.md
+  - "Фаза 1 · Данные":
+      - "M4 · SQL глубоко": phase1/m4-sql.md
+      - "M5 · NumPy и векторизация": phase1/m5-numpy.md
+      - "M6 · Pandas и Polars": phase1/m6-pandas-polars.md
+      - "M7 · Сбор и очистка данных": phase1/m7-data-collection-cleaning.md
+  - "Фаза 2 · Статистика":
+      - "M8 · Теория вероятностей": phase2/m8-probability.md
+      - "M9 · Математическая статистика": phase2/m9-statistics.md
+      - "M10 · Гипотезы и A/B-тесты": phase2/m10-hypothesis-ab.md
+      - "M11 · Причинно-следственный вывод": phase2/m11-causal-inference.md
+  - "Фаза 3 · Визуализация":
+      - "M12 · Визуализация и коммуникация": phase3/m12-visualization.md
+  - "Фаза 4 · Machine Learning":
+      - "M13 · Основы ML": phase4/m13-ml-foundations.md
+      - "M14 · Обучение с учителем": phase4/m14-supervised.md
+      - "M15 · Обучение без учителя": phase4/m15-unsupervised.md
+      - "M16 · Feature engineering": phase4/m16-feature-engineering.md
+      - "M17 · Ловушки и интерпретация": phase4/m17-pitfalls-interpretation.md
+  - "Фаза 5 · Deep Learning и AI":
+      - "M18 · Нейросети с нуля": phase5/m18-neural-nets.md
+      - "M19 · CNN, RNN, Transformers": phase5/m19-architectures.md
+      - "M20 · LLM: эмбеддинги, RAG, fine-tuning": phase5/m20-llms.md
+      - "M21 · AI-ассистированный DS": phase5/m21-ai-assisted-ds.md
+  - "Фаза 6 · Production":
+      - "M22 · MLOps": phase6/m22-mlops.md
+      - "M23 · Data Engineering": phase6/m23-data-engineering.md
+      - "M24 · Эксперименты и бизнес": phase6/m24-experiments-business.md
+  - "Фаза 7 · Research-level":
+      - "M25 · Как читать и писать статьи": phase7/m25-reading-research.md
+      - "M26 · Теория обучения": phase7/m26-statistical-learning-theory.md
+      - "M27 · Этика и fairness": phase7/m27-ethics-fairness.md
+      - "M28 · Специализация": phase7/m28-specialization.md
+  - "Практикум":
+      - "M29 · Kaggle и Hugging Face": practicum/m29-kaggle-huggingface.md

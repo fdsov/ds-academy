@@ -1,0 +1,41 @@
+:root {
+  --md-primary-fg-color: #3b3f8c;
+  --md-primary-fg-color--dark: #2a2d6b;
+  --md-accent-fg-color: #5b61d6;
+}
+
+.md-typeset h1 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.md-typeset .admonition {
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+
+/* Карточки на главной */
+.grid.cards > ul > li {
+  border-radius: 10px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.grid.cards > ul > li:hover {
+  border-color: var(--md-accent-fg-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+/* Бейдж фазы под заголовком лекции */
+.lecture-meta {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--md-accent-fg-color);
+  border: 1px solid var(--md-accent-fg-color);
+  border-radius: 999px;
+  padding: 0.1rem 0.7rem;
+  margin-bottom: 0.6rem;
+}
+
+.md-typeset table:not([class]) {
+  font-size: 0.74rem;
+}
