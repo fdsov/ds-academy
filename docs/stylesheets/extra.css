@@ -39,3 +39,66 @@
 .md-typeset table:not([class]) {
   font-size: 0.74rem;
 }
+
+/* Stepik-стиль: отметка прохождения урока */
+.lesson-progress {
+  display: inline-block;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.35rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid var(--md-accent-fg-color);
+  background: transparent;
+  color: var(--md-accent-fg-color);
+  margin: 0.1rem 0 1.4rem;
+  transition: background 0.15s, color 0.15s;
+}
+.lesson-progress:hover {
+  background: var(--md-accent-fg-color);
+  color: #fff;
+}
+.lesson-progress.done {
+  background: #2e7d32;
+  border-color: #2e7d32;
+  color: #fff;
+}
+
+/* Зелёная метка пройденного урока в левом сайдбаре */
+.md-nav__link.dsa-done::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2e7d32;
+  margin-left: 0.45rem;
+  flex: 0 0 auto;
+}
+
+/* Общий прогресс-бар курса над деревом навигации */
+.dsa-counter {
+  padding: 0.5rem 0.8rem 0.7rem;
+  margin: 0 0.4rem 0.4rem;
+}
+.dsa-counter__label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.dsa-counter__bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--md-default-fg-color--lightest);
+  overflow: hidden;
+}
+.dsa-counter__bar > span {
+  display: block;
+  height: 100%;
+  background: #2e7d32;
+  transition: width 0.25s;
+}
