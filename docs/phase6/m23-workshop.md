@@ -1,0 +1,261 @@
+# Воркшоп M23 · Мини-ELT от сырых ставок до витрины GGR
+
+<span class="lecture-meta">Воркшоп к модулю M23 · ориентир 5-7 ч</span>
+
+## Что отрабатываем
+
+Этот воркшоп закрепляет руками то, что в теории модуля шло через картинки: **ELT вместо ETL** (грузим сырьё как есть, трансформируем внутри хранилища), **колоночный Parquet с партиционированием по дате**, **DuckDB как small-data движок без кластеров**, **витрина в стиле dbt-модели с тестом качества**, и три понятия из M23.12 — **качество данных, идемпотентность, backfill**.
+
+Ты построишь сквозной конвейер: генератор синтетических событий ставок → партиционированный Parquet-«lake» → DuckDB-трансформация в дневную витрину `fct_ggr_daily` → DQ-проверки, которые падают громко → идемпотентный перезапуск и backfill за 30 дней. В финале ты докажешь запросом, что повторный прогон дня не задвоил GGR, а битый день не пролез в витрину.
+
+**Артефакт на выходе:** рабочий пайплайн (один Python-файл + локальный `lake/` + `warehouse.duckdb`), который любой человек может пересчитать за любую дату с нуля. Это ровно то, что в M23.3 названо конечным продуктом дата-инженера — воспроизводимая витрина, а не разовая выгрузка.
+
+## Данные
+
+Своих данных не нужно — генерируем синтетику с фиксированным seed, чтобы результат был воспроизводим у всех. События ставок повторяют схему из теории: `bet_id, player_id, amount_cents, payout_cents, geo, event_ts`. Депозиты и выплаты намеренно в **копейках** (как в M23.1 про «копейки vs рубли») — приведение к рублям делает уже трансформация.
+
+```bash
+uv init m23-elt && cd m23-elt
+uv add duckdb numpy
+```
+
+```python
+# gen.py — генератор сырых событий, раскладывает Parquet по партициям bet_date=YYYY-MM-DD
+import duckdb, numpy as np, pathlib, datetime as dt
+
+LAKE = pathlib.Path("lake/bets")
+GEOS = ["RU", "UZ", "KZ", "BR"]
+
+def gen_day(day: str, n: int, seed: int, broken: bool = False):
+    rng = np.random.default_rng(seed)
+    base = dt.datetime.fromisoformat(day)
+    amount = rng.integers(1_00, 5000_00, n)            # копейки
+    payout = (amount * rng.uniform(0.0, 1.3, n)).astype("int64")
+    if broken:                                          # порча: отрицательные ставки
+        amount[: n // 20] = -amount[: n // 20]
+    con = duckdb.connect()
+    con.register("df", {
+        "bet_id":     [f"{day}-{i}" for i in range(n)],
+        "player_id":  rng.integers(1, 2000, n),
+        "amount_cents": amount,
+        "payout_cents": payout,
+        "geo":        rng.choice(GEOS, n),
+        "event_ts":   [base + dt.timedelta(seconds=int(s)) for s in rng.integers(0, 86400, n)],
+    })
+    out = LAKE / f"bet_date={day}"
+    out.mkdir(parents=True, exist_ok=True)
+    con.execute(f"copy df to '{out}/part-0.parquet' (format parquet)")
+    con.close()
+
+if __name__ == "__main__":
+    start = dt.date(2026, 5, 18)
+    for i in range(30):                                 # 30 дней истории
+        d = (start + dt.timedelta(days=i)).isoformat()
+        gen_day(d, n=5000, seed=100 + i)
+    print("Сгенерировано 30 партиций в lake/bets/")
+```
+
+```bash
+uv run gen.py
+```
+
+!!! tip "Почему сразу Parquet с партициями, а не один CSV"
+
+    Партиция `bet_date=2026-05-18/` — это physical partitioning из M23.9. Запрос за один день читает одну папку (partition pruning), а не всю историю. Колоночный Parquet вдобавок сжимает и хранит min/max по блокам (predicate pushdown). Это «lake» в миниатюре — сырьё лежит как есть, схему применим при чтении.
+
+## Ход работы
+
+### Шаг 1: Посмотреть на сырьё глазами DuckDB
+
+**Зачем.** Отрабатываем M23.11 — DuckDB читает Parquet прямо из процесса, без серверов, и glob-путём собирает все партиции разом. Заодно убеждаемся, что суммы пока в копейках.
+
+```python
+import duckdb
+con = duckdb.connect()
+con.sql("""
+    select geo, count(*) bets, sum(amount_cents) bet_kopecks
+    from read_parquet('lake/bets/**/*.parquet')
+    group by geo order by bets desc
+""").show()
+```
+
+**Что получилось.** Агрегат по всему «озеру» одним SQL без единого поднятого сервера. `bet_kopecks` — семизначные числа: это сырьё, трансформация ещё впереди.
+
+!!! question "Проверь себя"
+
+    1. Почему `read_parquet('lake/bets/**/*.parquet')` читает все 30 дней, а `bet_date=2026-05-18/*.parquet` — только один?
+    2. Это OLTP- или OLAP-нагрузка и почему?
+
+??? success "Ответы"
+
+    1. Glob `**` обходит все партиции-папки; явный путь к одной партиции включает partition pruning — движок физически читает только нужную папку.
+    2. OLAP: агрегация (`group by`, `sum`, `count`) по множеству строк и паре колонок — ровно то, под что заточен колоночный DuckDB, а не построчный OLTP.
+
+### Шаг 2: Витрина GGR как dbt-модель (слои staging → mart)
+
+**Зачем.** Отрабатываем M23.8: дисциплину слоёв `staging` (1:1 чистка сырья, приведение типов) и `marts` (бизнес-витрина). Пишем чистым SQL — это и есть «T» в ELT. GGR считаем по формуле из теории: ставки минус выплаты, с переводом копеек в рубли.
+
+```python
+# trn.py — staging + mart на чистом SQL поверх сырья
+import duckdb
+
+STG = """
+create or replace temp table stg_bets as
+select
+    bet_id,
+    player_id,
+    amount_cents / 100.0 as bet_amount,     -- копейки -> рубли
+    payout_cents  / 100.0 as payout,
+    geo,
+    cast(event_ts as date) as bet_date
+from read_parquet('lake/bets/bet_date={day}/**/*.parquet')
+where bet_id is not null
+"""
+
+MART = """
+select
+    bet_date, geo,
+    sum(bet_amount)          as total_bets,
+    sum(payout)              as total_payout,
+    sum(bet_amount - payout) as ggr,
+    count(distinct player_id) as players
+from stg_bets
+group by 1, 2
+"""
+```
+
+**Что получилось.** Две модели по аналогии с `stg_bets.sql` / `fct_ggr_daily.sql` из лекции. `stg` отделяет чистку от бизнес-логики; mart агрегирует. Сырьё не тронуто — если завтра нужен разрез по типу игры, добавляем колонку в SQL и пересчитываем историю (привет, M23.6).
+
+### Шаг 3: Проверки качества, которые падают громко
+
+**Зачем.** M23.12: качество встраивается в пайплайн как тесты по осям completeness / validity. Аналог dbt-тестов `not_null` и кастомного «ggr вменяем». Главное правило — **блокировать публикацию плохих данных**, а не пропускать молча.
+
+```python
+def dq_checks(con):
+    nulls = con.execute("""
+        select count(*) from stg_bets
+        where bet_id is null or player_id is null
+    """).fetchone()[0]
+    if nulls:
+        raise ValueError(f"DQ fail: {nulls} строк с NULL в ключах")
+
+    neg = con.execute(
+        "select count(*) from stg_bets where bet_amount < 0"
+    ).fetchone()[0]
+    if neg:
+        raise ValueError(f"DQ fail: {neg} отрицательных ставок")
+```
+
+**Что получилось.** Две проверки-предохранителя: полнота ключей и валидность суммы. Любая срабатывает `raise`-ом до записи в витрину — мусор физически не доходит до `fct_ggr_daily`.
+
+### Шаг 4: Идемпотентность через delete-insert по партиции
+
+**Зачем.** Сердце воркшопа и M23.12. Перезапуск дня (упал и повторился) не должен задваивать GGR. Паттерн — сначала `delete` партиции за дату, потом `insert`. Append без delete — главный источник задвоений из «Ловушек».
+
+```python
+def build_ggr_mart(day: str, db_path="warehouse.duckdb"):
+    con = duckdb.connect(db_path)
+    con.execute(STG.format(day=day))
+    dq_checks(con)                                   # падаем до записи
+
+    con.execute("""
+        create table if not exists fct_ggr_daily (
+            bet_date date, geo varchar, total_bets double,
+            total_payout double, ggr double, players bigint
+        )
+    """)
+    con.execute("delete from fct_ggr_daily where bet_date = ?", [day])   # идемпотентность
+    con.execute(f"insert into fct_ggr_daily {MART}")
+    con.close()
+```
+
+**Что получилось.** Функция параметризована датой и идемпотентна: `delete`+`insert` за партицию означает, что результат повторного прогона дня равен результату одного прогона. Эти же два свойства — параметризация датой и идемпотентность — делают возможным backfill.
+
+!!! question "Проверь себя"
+
+    1. Что сломается, если убрать строку `delete ... where bet_date = ?` и запустить день дважды?
+    2. Почему DQ-проверки стоят до `insert`, а не после?
+
+??? success "Ответы"
+
+    1. Будет чистый append: строки дня вставятся повторно, GGR за день удвоится — «рост», которого нет. Это training-serving-уровня баг, который тихо портит дашборд.
+    2. Чтобы плохие данные не попали в витрину вообще. Проверка после вставки уже поздно — мусор опубликован, и его кто-то увидит до отката.
+
+### Шаг 5: Backfill за 30 дней и доказательство идемпотентности
+
+**Зачем.** M23.12 — backfill это пересчёт истории по новой/исправленной логике. Прогоняем цикл по датам (ровно то, что в проде делает оркестратор: `context.partition_key` в Dagster-ассете из лекции). Затем намеренно запускаем один день дважды и доказываем запросом, что задвоения нет.
+
+```python
+# run.py
+import duckdb, datetime as dt
+from trn import build_ggr_mart
+
+start = dt.date(2026, 5, 18)
+days = [(start + dt.timedelta(days=i)).isoformat() for i in range(30)]
+
+for d in days:                       # backfill всей истории
+    build_ggr_mart(d)
+
+build_ggr_mart(days[0])              # тот же день второй раз
+
+con = duckdb.connect("warehouse.duckdb")
+con.sql(f"""
+    select bet_date, count(*) rows_per_day, sum(ggr) ggr
+    from fct_ggr_daily
+    where bet_date = '{days[0]}'
+    group by bet_date
+""").show()
+```
+
+**Что получилось.** `rows_per_day` равно числу гео (максимум 4), а не удвоено — delete-insert отработал. Если бы стоял append, строк было бы вдвое больше и GGR раздулся. Это и есть доказательство идемпотентности запросом, которое требует M23.15.
+
+### Шаг 6: Битый день не должен пролезть
+
+**Зачем.** Замыкаем M23.12 на M23.13: DQ-проверка должна остановить пайплайн на испорченных данных, а уже записанная история — остаться нетронутой.
+
+```python
+from gen import gen_day
+from trn import build_ggr_mart
+
+bad = "2026-06-20"
+gen_day(bad, n=5000, seed=999, broken=True)   # отрицательные ставки
+
+try:
+    build_ggr_mart(bad)
+except ValueError as e:
+    print("Пайплайн остановлен:", e)
+
+con = duckdb.connect("warehouse.duckdb")
+print("Партиций битого дня в витрине:",
+      con.execute("select count(*) from fct_ggr_daily where bet_date = ?", [bad]).fetchone()[0])
+```
+
+**Что получилось.** `ValueError` ловится, в витрине за битый день — 0 строк. Качество отработало как предохранитель: плохой день не публикуется, хороший остаётся. Чинишь источник, перезапускаешь дату — backfill за один день благодаря идемпотентности.
+
+!!! question "Проверь себя"
+
+    1. Почему после падения битого дня вся остальная история в витрине цела?
+    2. Какие два свойства из шагов 4-5 обязательны, чтобы «починил источник → пересчитал одну дату» работало?
+
+??? success "Ответы"
+
+    1. Каждая дата обрабатывается отдельной партицией: `raise` происходит до `insert` именно за битую дату и не трогает остальные строки таблицы.
+    2. Параметризация датой (можно гнать конкретный день) и идемпотентность (delete-insert не задваивает при перезапуске) — две стороны одной монеты из M23.12.
+
+## Критерий готовности
+
+- [ ] `gen.py` создаёт 30 партиций `lake/bets/bet_date=.../part-0.parquet` с фиксированным seed
+- [ ] Витрина `fct_ggr_daily` строится из сырья двумя слоями (staging → mart) на чистом SQL
+- [ ] GGR считается как `sum(bet_amount - payout)` с переводом копеек в рубли
+- [ ] DQ-проверки (NULL-ключи, отрицательные ставки) падают `raise`-ом до записи
+- [ ] `build_ggr_mart(day)` параметризован датой и идемпотентен (delete-insert по партиции)
+- [ ] Backfill за 30 дней проходит циклом
+- [ ] Двойной прогон дня доказан запросом — `rows_per_day` не задвоился
+- [ ] Битый день ловится проверкой, в витрину не попадает, остальная история цела
+
+## Развитие
+
+- **Перенеси трансформации в настоящий dbt-проект на DuckDB** (`dbt-duckdb`): `stg_bets`, `fct_ggr_daily`, `dim_players` (первый депозит, гео), тесты `not_null` / `unique` / `accepted_values` по гео и кастомный SQL-тест «ggr вменяем». Сгенерируй `dbt docs` и посмотри граф lineage из M23.8.
+- **Добавь оркестрацию Dagster** с дневными партициями: оберни `build_ggr_mart` в `@asset`, где `run_date = context.partition_key`, и запусти backfill из UI вместо ручного цикла.
+- **Расширь витрину метриками retention D1/D7 и средним депозитом** — новый разрез поверх того же сырья, чтобы прочувствовать тезис M23.6: новый срез считается по всей истории, потому что сырьё сохранено.
+- **Сравни Parquet с CSV**: выгрузи те же события в один CSV, замерь размер и время `SUM(ggr) WHERE bet_date = X` против партиционированного Parquet — увидишь partition pruning и сжатие из M23.9 в цифрах.

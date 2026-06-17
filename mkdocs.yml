@@ -82,6 +82,7 @@ extra_javascript:
   - javascripts/mathjax.js
   - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
   - javascripts/progress.js
+  - javascripts/quiz.js
 
 extra_css:
   - stylesheets/extra.css
@@ -92,41 +93,70 @@ nav:
   - Программа курса: curriculum.md
   - "Фаза 0 · Фундамент":
       - "M0 · Мышление data scientist": phase0/m0-mindset.md
+      - "Воркшоп M0": phase0/m0-workshop.md
       - "M1 · Среда 2026": phase0/m1-environment-2026.md
+      - "Воркшоп M1": phase0/m1-workshop.md
       - "M2 · Python для DS": phase0/m2-python-for-ds.md
+      - "Воркшоп M2": phase0/m2-workshop.md
       - "M3 · Математика-фундамент": phase0/m3-math-foundations.md
+      - "Воркшоп M3": phase0/m3-workshop.md
   - "Фаза 1 · Данные":
       - "M4 · SQL глубоко": phase1/m4-sql.md
+      - "Воркшоп M4": phase1/m4-workshop.md
       - "M5 · NumPy и векторизация": phase1/m5-numpy.md
+      - "Воркшоп M5": phase1/m5-workshop.md
       - "M6 · Pandas и Polars": phase1/m6-pandas-polars.md
+      - "Воркшоп M6": phase1/m6-workshop.md
       - "M7 · Сбор и очистка данных": phase1/m7-data-collection-cleaning.md
+      - "Воркшоп M7": phase1/m7-workshop.md
   - "Фаза 2 · Статистика":
       - "M8 · Теория вероятностей": phase2/m8-probability.md
+      - "Воркшоп M8": phase2/m8-workshop.md
       - "M9 · Математическая статистика": phase2/m9-statistics.md
+      - "Воркшоп M9": phase2/m9-workshop.md
       - "M10 · Гипотезы и A/B-тесты": phase2/m10-hypothesis-ab.md
+      - "Воркшоп M10": phase2/m10-workshop.md
       - "M11 · Причинно-следственный вывод": phase2/m11-causal-inference.md
+      - "Воркшоп M11": phase2/m11-workshop.md
   - "Фаза 3 · Визуализация":
       - "M12 · Визуализация и коммуникация": phase3/m12-visualization.md
+      - "Воркшоп M12": phase3/m12-workshop.md
   - "Фаза 4 · Machine Learning":
       - "M13 · Основы ML": phase4/m13-ml-foundations.md
+      - "Воркшоп M13": phase4/m13-workshop.md
       - "M14 · Обучение с учителем": phase4/m14-supervised.md
+      - "Воркшоп M14": phase4/m14-workshop.md
       - "M15 · Обучение без учителя": phase4/m15-unsupervised.md
+      - "Воркшоп M15": phase4/m15-workshop.md
       - "M16 · Feature engineering": phase4/m16-feature-engineering.md
+      - "Воркшоп M16": phase4/m16-workshop.md
       - "M17 · Ловушки и интерпретация": phase4/m17-pitfalls-interpretation.md
+      - "Воркшоп M17": phase4/m17-workshop.md
   - "Фаза 5 · Deep Learning и AI":
       - "M18 · Нейросети с нуля": phase5/m18-neural-nets.md
+      - "Воркшоп M18": phase5/m18-workshop.md
       - "M19 · CNN, RNN, Transformers": phase5/m19-architectures.md
+      - "Воркшоп M19": phase5/m19-workshop.md
       - "M20 · LLM: эмбеддинги, RAG, fine-tuning": phase5/m20-llms.md
+      - "Воркшоп M20": phase5/m20-workshop.md
       - "M21 · AI-ассистированный DS": phase5/m21-ai-assisted-ds.md
+      - "Воркшоп M21": phase5/m21-workshop.md
   - "Фаза 6 · Production":
       - "M22 · MLOps": phase6/m22-mlops.md
+      - "Воркшоп M22": phase6/m22-workshop.md
       - "M23 · Data Engineering": phase6/m23-data-engineering.md
+      - "Воркшоп M23": phase6/m23-workshop.md
       - "M24 · Эксперименты и бизнес": phase6/m24-experiments-business.md
+      - "Воркшоп M24": phase6/m24-workshop.md
   - "Фаза 7 · Research-level":
       - "M25 · Как читать и писать статьи": phase7/m25-reading-research.md
+      - "Воркшоп M25": phase7/m25-workshop.md
       - "M26 · Теория обучения": phase7/m26-statistical-learning-theory.md
+      - "Воркшоп M26": phase7/m26-workshop.md
       - "M27 · Этика и fairness": phase7/m27-ethics-fairness.md
+      - "Воркшоп M27": phase7/m27-workshop.md
       - "M28 · Специализация": phase7/m28-specialization.md
+      - "Воркшоп M28": phase7/m28-workshop.md
   - "Практикум":
       - "M29 · Kaggle и Hugging Face": practicum/m29-kaggle-huggingface.md
   - "Воркшопы":
