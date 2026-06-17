@@ -64,4 +64,4 @@
 
 ---
 
-Дальше — [полная программа курса](curriculum.md) или сразу [M0 — Мышление data scientist](phase0/m0-mindset.md).
+Дальше — [полная программа курса](curriculum.md) или сразу [M0 — Мышление data scientist](phase0/m0/index.md).

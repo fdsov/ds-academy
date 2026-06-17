@@ -9,76 +9,76 @@
 
 Закладывает то, без чего всё остальное бессмысленно: научное мышление, рабочую среду и математический минимум.
 
-- [**M0 · Как мыслит data scientist**](phase0/m0-mindset.md) — что такое DS, научный метод, диаграмма Конвея, фундаментальные ловушки данных.
-- [**M1 · Среда 2026**](phase0/m1-environment-2026.md) — Python, uv, git, Jupyter/marimo, настройка AI-копилота.
-- [**M2 · Python для DS**](phase0/m2-python-for-ds.md) — синтаксис, структуры данных, ООП, идиомы, которые реально нужны.
-- [**M3 · Математика-фундамент**](phase0/m3-math-foundations.md) — линейная алгебра и матанализ ровно в объёме, нужном для ML.
+- [**M0 · Как мыслит data scientist**](phase0/m0/index.md) — что такое DS, научный метод, диаграмма Конвея, фундаментальные ловушки данных.
+- [**M1 · Среда 2026**](phase0/m1/index.md) — Python, uv, git, Jupyter/marimo, настройка AI-копилота.
+- [**M2 · Python для DS**](phase0/m2/index.md) — синтаксис, структуры данных, ООП, идиомы, которые реально нужны.
+- [**M3 · Математика-фундамент**](phase0/m3/index.md) — линейная алгебра и матанализ ровно в объёме, нужном для ML.
 
 ## Фаза 1 · Работа с данными
 
 Хлеб профессии. 80% времени DS — это достать, очистить и подготовить данные.
 
-- [**M4 · SQL глубоко**](phase1/m4-sql.md) — от SELECT до оконных функций, CTE, чтение планов запросов.
-- [**M5 · NumPy и векторизация**](phase1/m5-numpy.md) — массивы, broadcasting, почему циклы — зло.
-- [**M6 · Pandas и Polars**](phase1/m6-pandas-polars.md) — indexing, groupby, merge, time series; Polars как стандарт 2026.
-- [**M7 · Сбор и очистка данных**](phase1/m7-data-collection-cleaning.md) — API, форматы, грязные данные, data quality.
+- [**M4 · SQL глубоко**](phase1/m4/index.md) — от SELECT до оконных функций, CTE, чтение планов запросов.
+- [**M5 · NumPy и векторизация**](phase1/m5/index.md) — массивы, broadcasting, почему циклы — зло.
+- [**M6 · Pandas и Polars**](phase1/m6/index.md) — indexing, groupby, merge, time series; Polars как стандарт 2026.
+- [**M7 · Сбор и очистка данных**](phase1/m7/index.md) — API, форматы, грязные данные, data quality.
 
 ## Фаза 2 · Статистика и вероятности
 
 Ядро Data Science — то, что отличает тебя от программиста. Здесь решается, обманешься ты данными или нет.
 
-- [**M8 · Теория вероятностей**](phase2/m8-probability.md) — распределения, условная вероятность, теорема Байеса.
-- [**M9 · Математическая статистика**](phase2/m9-statistics.md) — оценки, MLE, доверительные интервалы, bootstrap.
-- [**M10 · Гипотезы и A/B-тесты**](phase2/m10-hypothesis-ab.md) — проверка гипотез, p-value, мощность, дизайн экспериментов.
-- [**M11 · Причинно-следственный вывод**](phase2/m11-causal-inference.md) — корреляция против причинности, и как считать эффект.
+- [**M8 · Теория вероятностей**](phase2/m8/index.md) — распределения, условная вероятность, теорема Байеса.
+- [**M9 · Математическая статистика**](phase2/m9/index.md) — оценки, MLE, доверительные интервалы, bootstrap.
+- [**M10 · Гипотезы и A/B-тесты**](phase2/m10/index.md) — проверка гипотез, p-value, мощность, дизайн экспериментов.
+- [**M11 · Причинно-следственный вывод**](phase2/m11/index.md) — корреляция против причинности, и как считать эффект.
 
 ## Фаза 3 · Визуализация и коммуникация
 
 Невидимый или непонятый вывод — это несделанный вывод.
 
-- [**M12 · Визуализация и storytelling**](phase3/m12-visualization.md) — matplotlib/seaborn/plotly/altair, дашборды, подача результата.
+- [**M12 · Визуализация и storytelling**](phase3/m12/index.md) — matplotlib/seaborn/plotly/altair, дашборды, подача результата.
 
 ## Фаза 4 · Machine Learning
 
 Модели как инструмент с понятным механизмом, а не магия.
 
-- [**M13 · Основы ML**](phase4/m13-ml-foundations.md) — bias-variance, train/val/test, метрики, кросс-валидация.
-- [**M14 · Обучение с учителем**](phase4/m14-supervised.md) — линейные модели, деревья, ансамбли (XGBoost/LightGBM/CatBoost).
-- [**M15 · Обучение без учителя**](phase4/m15-unsupervised.md) — кластеризация, PCA, поиск аномалий.
-- [**M16 · Feature engineering**](phase4/m16-feature-engineering.md) — признаки, подбор гиперпараметров, выбор модели.
-- [**M17 · Ловушки и интерпретация**](phase4/m17-pitfalls-interpretation.md) — data leakage, overfitting, SHAP, честная валидация.
+- [**M13 · Основы ML**](phase4/m13/index.md) — bias-variance, train/val/test, метрики, кросс-валидация.
+- [**M14 · Обучение с учителем**](phase4/m14/index.md) — линейные модели, деревья, ансамбли (XGBoost/LightGBM/CatBoost).
+- [**M15 · Обучение без учителя**](phase4/m15/index.md) — кластеризация, PCA, поиск аномалий.
+- [**M16 · Feature engineering**](phase4/m16/index.md) — признаки, подбор гиперпараметров, выбор модели.
+- [**M17 · Ловушки и интерпретация**](phase4/m17/index.md) — data leakage, overfitting, SHAP, честная валидация.
 
 ## Фаза 5 · Deep Learning и современный AI
 
 Нейросети с нуля до LLM-эры и практики работы с AI-копилотом.
 
-- [**M18 · Нейросети с нуля**](phase5/m18-neural-nets.md) — перцептрон, backpropagation, PyTorch.
-- [**M19 · CNN, RNN, Transformers**](phase5/m19-architectures.md) — архитектуры и почему всё захватили трансформеры.
-- [**M20 · LLM**](phase5/m20-llms.md) — эмбеддинги, fine-tuning, RAG, что под капотом.
-- [**M21 · AI-ассистированный DS**](phase5/m21-ai-assisted-ds.md) — как нейросети реально ускоряют работу и где врут.
+- [**M18 · Нейросети с нуля**](phase5/m18/index.md) — перцептрон, backpropagation, PyTorch.
+- [**M19 · CNN, RNN, Transformers**](phase5/m19/index.md) — архитектуры и почему всё захватили трансформеры.
+- [**M20 · LLM**](phase5/m20/index.md) — эмбеддинги, fine-tuning, RAG, что под капотом.
+- [**M21 · AI-ассистированный DS**](phase5/m21/index.md) — как нейросети реально ускоряют работу и где врут.
 
 ## Фаза 6 · Production и Senior-инженерия
 
 Модель в ноутбуке не приносит денег. Здесь — путь до прода.
 
-- [**M22 · MLOps**](phase6/m22-mlops.md) — деплой, мониторинг, дрейф данных, feature store.
-- [**M23 · Data Engineering**](phase6/m23-data-engineering.md) — пайплайны, dbt, оркестрация (Airflow/Dagster).
-- [**M24 · Эксперименты и бизнес**](phase6/m24-experiments-business.md) — эксперименты в проде, бизнес-метрики, связь модели с деньгами.
+- [**M22 · MLOps**](phase6/m22/index.md) — деплой, мониторинг, дрейф данных, feature store.
+- [**M23 · Data Engineering**](phase6/m23/index.md) — пайплайны, dbt, оркестрация (Airflow/Dagster).
+- [**M24 · Эксперименты и бизнес**](phase6/m24/index.md) — эксперименты в проде, бизнес-метрики, связь модели с деньгами.
 
 ## Фаза 7 · Research-level
 
 Уровень «доктор наук»: способность читать, проверять и создавать новое знание.
 
-- [**M25 · Как читать и писать статьи**](phase7/m25-reading-research.md) — научные публикации, воспроизводимость.
-- [**M26 · Теория статистического обучения**](phase7/m26-statistical-learning-theory.md) — глубокая доказательная база ML.
-- [**M27 · Этика, fairness, privacy**](phase7/m27-ethics-fairness.md) — ответственный AI.
-- [**M28 · Специализация**](phase7/m28-specialization.md) — time series, quant finance, gambling analytics: выбор глубины.
+- [**M25 · Как читать и писать статьи**](phase7/m25/index.md) — научные публикации, воспроизводимость.
+- [**M26 · Теория статистического обучения**](phase7/m26/index.md) — глубокая доказательная база ML.
+- [**M27 · Этика, fairness, privacy**](phase7/m27/index.md) — ответственный AI.
+- [**M28 · Специализация**](phase7/m28/index.md) — time series, quant finance, gambling analytics: выбор глубины.
 
 ## Практикум · Платформы
 
 Сквозной практический модуль — подключается уже с ранних фаз и сопровождает весь курс.
 
-- [**M29 · Kaggle и Hugging Face**](practicum/m29-kaggle-huggingface.md) — соревнования, датасеты, бесплатные GPU, model hub, Spaces; как набивать практику и собирать портфолио.
+- [**M29 · Kaggle и Hugging Face**](practicum/m29/index.md) — соревнования, датасеты, бесплатные GPU, model hub, Spaces; как набивать практику и собирать портфолио.
 
 ## Воркшопы · Сквозные проекты
 
@@ -88,4 +88,4 @@
 
 ---
 
-Старт — [M0 · Как мыслит data scientist](phase0/m0-mindset.md). Перед стартом загляни в [методику обучения](methodology.md).
+Старт — [M0 · Как мыслит data scientist](phase0/m0/index.md). Перед стартом загляни в [методику обучения](methodology.md).
