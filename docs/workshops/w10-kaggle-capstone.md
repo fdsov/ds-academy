@@ -54,26 +54,26 @@ uv add --dev jupyter ipykernel
 
 Хорошо подходят табличные playground-соревнования с метрикой AUC и понятным дисбалансом:
 
-- **Playground Series** (ежемесячные, slug вида `playground-series-s4e1` и далее) — Kaggle специально делает их для обучения: чистый табличный формат, бинарная классификация, метрика AUC.
+- **Playground Series** (ежемесячные, slug вида `playground-series-s6e1` и далее — сейчас идёт сезон S6) — Kaggle специально делает их для обучения: чистый табличный формат, бинарная классификация, метрика AUC.
 - **Santander Customer Transaction Prediction** — классика: 200 анонимных числовых признаков, сильный дисбаланс, метрика AUC.
 - **Home Credit Default Risk** — сложнее (несколько таблиц), но это настоящая индустриальная задача про дефолт.
 
 Для первого прохождения бери свежий **Playground Series** с бинарным таргетом и метрикой AUC: он самый близкий по духу к этому воркшопу.
 
-Аутентификация kaggle CLI. Заходишь на kaggle.com → Account → Create New API Token, скачивается `kaggle.json`. Дальше:
+Аутентификация kaggle CLI. Современный способ — OAuth-вход прямо из CLI: команда откроет браузер и привяжет аккаунт без ручного файла.
 
 ```bash
-mkdir -p ~/.kaggle
-mv ~/Downloads/kaggle.json ~/.kaggle/kaggle.json
-chmod 600 ~/.kaggle/kaggle.json          # иначе CLI откажется работать
+uv run kaggle auth login          # OAuth: откроет браузер и сохранит токен
 
 # смотрим список соревнований
 uv run kaggle competitions list -s tabular
 
 # качаем данные конкретного соревнования (пример slug)
-uv run kaggle competitions download -c playground-series-s4e1 -p data/
+uv run kaggle competitions download -c playground-series-s6e1 -p data/
 cd data && unzip -o '*.zip' && cd ..
 ```
+
+Способ через `kaggle.json` (kaggle.com → Account → Create New API Token, затем `mkdir -p ~/.kaggle && mv ~/Downloads/kaggle.json ~/.kaggle/kaggle.json && chmod 600 ~/.kaggle/kaggle.json`) теперь считается legacy, но всё ещё работает — пригодится в CI и на машинах без браузера.
 
 Что получится: в `data/` появятся `train.csv`, `test.csv` и `sample_submission.csv`. `train.csv` содержит таргет, `test.csv` — нет (его ты и предсказываешь), `sample_submission.csv` задаёт точный формат ответа.
 
@@ -253,9 +253,9 @@ print(sub.head(3))
 
 ```bash
 # реальный Kaggle:
-uv run kaggle competitions submit -c playground-series-s4e1 \
+uv run kaggle competitions submit -c playground-series-s6e1 \
     -f submission_baseline.csv -m "baseline logreg, CV 0.86"
-uv run kaggle competitions submissions -c playground-series-s4e1   # посмотреть свой скор на LB
+uv run kaggle competitions submissions -c playground-series-s6e1   # посмотреть свой скор на LB
 ```
 
 Для синтетического режима LB симулируем локально — это и будет твой «public/private»:

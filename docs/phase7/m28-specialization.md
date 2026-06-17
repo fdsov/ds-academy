@@ -103,7 +103,7 @@ Prophet от Meta — это аддитивная модель, расклады
 
 На пальцах: вместо «одна модель на один ряд» — «одна модель на все ряды», которая видит общие закономерности (выходные, конец месяца, выплаты зарплат) и адаптируется к специфике каждого ряда через признаки-идентификаторы. Это и точнее, и дешевле в поддержке.
 
-Актуальный ландшафт: для табличного подхода — LightGBM/XGBoost с библиотеками автоматизации признаков. Для нейросетевого — DeepAR, N-BEATS, N-HiTS, TFT (Temporal Fusion Transformer), PatchTST. Отдельно — foundation-модели для рядов (TimeGPT, Lag-Llama, Moirai, Chronos от Amazon), которые делают zero-shot прогноз без обучения на твоих данных, как LLM делают zero-shot текст. В 2026 их используют как сильный baseline: запустил предобученную модель на свой ряд за минуту, получил прогноз, дальше решаешь, нужен ли кастом.
+Актуальный ландшафт: для табличного подхода — LightGBM/XGBoost с библиотеками автоматизации признаков. Для нейросетевого — DeepAR, N-BEATS, N-HiTS, TFT (Temporal Fusion Transformer), PatchTST. Отдельно — foundation-модели для рядов (Chronos-2, Moirai-2, TimesFM от Google, TimeGPT, Lag-Llama), которые делают zero-shot прогноз без обучения на твоих данных, как LLM делают zero-shot текст. В 2026 их используют как сильный baseline: запустил предобученную модель на свой ряд за минуту, получил прогноз, дальше решаешь, нужен ли кастом.
 
 !!! question "Проверь себя"
 
@@ -387,7 +387,7 @@ print(f"Оценка LTV (площадь под retention x ARPU): {ltv_estimate
 
 !!! note "Стек 2026"
 
-    Актуально. Временные ряды: LightGBM/XGBoost по признакам как рабочая лошадка, нейросети N-HiTS / PatchTST / TFT для сложных случаев, foundation-модели (TimeGPT, Chronos, Moirai, Lag-Llama) для zero-shot baseline за минуту. Библиотеки: statsforecast/neuralforecast (Nixtla), Darts, sktime. Quant: vectorbt и backtesting.py для бэктеста, риск через quantstats. Гемблинг LTV: lifetimes/вероятностные модели + ML-регрессия. Антифрод: графовые подходы (PyG, networkx) и детекция аномалий.
+    Актуально. Временные ряды: LightGBM/XGBoost по признакам как рабочая лошадка, нейросети N-HiTS / PatchTST / TFT для сложных случаев, foundation-модели (Chronos-2, Moirai-2, TimesFM, TimeGPT, Lag-Llama) для zero-shot baseline за минуту. Библиотеки: statsforecast/neuralforecast (Nixtla), Darts, sktime. Quant: vectorbt и backtesting.py для бэктеста, риск через quantstats. Гемблинг LTV: PyMC-Marketing (вероятностные модели BG/NBD, Gamma-Gamma) + ML-регрессия. Антифрод: графовые подходы (PyG, networkx) и детекция аномалий.
 
     Устарело относительно старых курсов. «ARIMA/Prophet как финальное решение для прода» — теперь это baseline, не продакшн. Ручной подбор $p,d,q$ по ACF/PACF вытеснен авто-подбором и ML. Чистый statsmodels на тысячах рядов — медленно, заменяется глобальными моделями. «Высокий $R^2$ = хорошая модель доходности» — в финансах это сигнал утечки, а не успеха. Accuracy как метрика антифрода — анахронизм при дисбалансе классов.
 
@@ -433,6 +433,6 @@ print(f"Оценка LTV (площадь под retention x ARPU): {ltv_estimate
 - Ernest Chan. «Quantitative Trading» и «Algorithmic Trading» — практическое введение в бэктест и его ловушки.
 - Nixtla docs (statsforecast, neuralforecast, TimeGPT) — актуальный стек прогнозирования рядов 2026 с foundation-моделями.
 - Lam Lo, статьи Amplitude/Mixpanel по cohort analysis и predictive LTV — продуктовая практика удержания и прогноза ценности.
-- Lifetimes / PyMC-Marketing документация — вероятностные модели LTV (BG/NBD, Gamma-Gamma).
+- PyMC-Marketing документация — вероятностные модели LTV (BG/NBD, Gamma-Gamma); пришла на смену архивной библиотеке lifetimes.
 - Cathy O'Neil. «Weapons of Math Destruction» — про этику моделей, релевантно responsible gaming и риску оптимизации не той метрики.
 - Документация UKGC/MGA по responsible gaming и AML — регуляторный контекст антифрода в iGaming.

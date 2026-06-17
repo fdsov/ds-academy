@@ -463,7 +463,7 @@ PR-AUC сравнивают не с 0.5, а с базовой линией, ра
 
 ## Код: стек 2026
 
-Актуальный базовый стек: Python 3.12+, scikit-learn 1.5+, pandas 2.x. Для табличных задач продакшена — LightGBM / XGBoost / CatBoost поверх sklearn-совместимого API. Ядро API sklearn неизменно годами: `fit`, `predict`, `transform`.
+Актуальный базовый стек: Python 3.12+, scikit-learn 1.7+ (актуальная 1.9), pandas 3.x (Copy-on-Write и PyArrow-строки по умолчанию). Для табличных задач продакшена — LightGBM / XGBoost / CatBoost поверх sklearn-совместимого API. Ядро API sklearn неизменно годами: `fit`, `predict`, `transform`.
 
 ### Три глагола sklearn
 
@@ -557,9 +557,9 @@ print(classification_report(y_te, pred, digits=3))
 
 !!! note "Стек 2026"
 
-    Актуально: scikit-learn 1.5+ (стабильный fit/predict/transform API, `set_output(transform="pandas")` для сохранения имён колонок), pandas 2.x на Arrow-бэкенде, градиентный бустинг LightGBM/XGBoost/CatBoost как рабочая лошадка табличных задач, imbalanced-learn для корректного ресэмплинга внутри Pipeline. Для экспериментов и трекинга — MLflow.
+    Актуально: scikit-learn 1.7+ (актуальная 1.9; стабильный fit/predict/transform API, `set_output(transform="pandas")` для сохранения имён колонок), pandas 3.x (Copy-on-Write и выделенный str-dtype на PyArrow по умолчанию), градиентный бустинг LightGBM/XGBoost/CatBoost как рабочая лошадка табличных задач, imbalanced-learn для корректного ресэмплинга внутри Pipeline. Для экспериментов и трекинга — MLflow.
 
-    Что устарело относительно старых курсов: ручной `StandardScaler().fit(X)` на всём датасете до сплита (источник утечки, делай через Pipeline); опора на accuracy в туториалах по дисбалансу; `sklearn.externals.joblib` (давно отдельный пакет `joblib`); представление, что нейросети нужны для табличных данных по умолчанию — на таблицах градиентный бустинг чаще выигрывает у deep learning при меньших затратах.
+    Что устарело относительно старых курсов: ручной `StandardScaler().fit(X)` на всём датасете до сплита (источник утечки, делай через Pipeline); опора на accuracy в туториалах по дисбалансу; `sklearn.externals.joblib` (давно отдельный пакет `joblib`); представление, что нейросети нужны для табличных данных по умолчанию — на больших табличных данных в проде градиентный бустинг остаётся практичным дефолтом при меньших затратах. Оговорка: с 2025 появились табличные foundation-модели (TabPFN 2.5), которые на малых и средних выборках уже часто обходят бустинг.
 
 !!! warning "Ловушки"
 
@@ -603,7 +603,7 @@ print(classification_report(y_te, pred, digits=3))
 
 ## Ресурсы
 
-- Aurélien Géron. Hands-On Machine Learning with Scikit-Learn, Keras & TensorFlow, 3rd ed. — практический фундамент, актуален.
+- Aurélien Géron. Hands-On Machine Learning with Scikit-Learn, Keras & TensorFlow, 3rd ed. — практический фундамент, актуален. В 2025 вышла новая редакция на PyTorch.
 - Hastie, Tibshirani, Friedman. The Elements of Statistical Learning — строгая теория, глава про bias-variance и оценку моделей обязательна.
 - James, Witten, Hastie, Tibshirani. An Introduction to Statistical Learning (Python edition) — то же мягче, с кодом на Python, бесплатно на сайте авторов.
 - scikit-learn User Guide, разделы Model evaluation и Cross-validation — первоисточник по метрикам и схемам валидации.

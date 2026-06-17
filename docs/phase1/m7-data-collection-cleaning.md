@@ -120,7 +120,7 @@ API отдаёт данные по HTTP. Вы шлёте запрос на endpo
 
 ### Библиотеки: httpx как дефолт 2026
 
-Классика — библиотека `requests`, она жива и прекрасно работает для простых синхронных задач. Но стандарт 2026 для нового кода — `httpx`: тот же знакомый API, плюс встроенная поддержка асинхронности (можно лить сотни запросов параллельно), HTTP/2 и таймаутов из коробки. Для тяжёлого параллельного забора это решает.
+Классика — библиотека `requests`, она жива и прекрасно работает для простых синхронных задач. Но стандарт 2026 для нового кода — `httpx`: тот же знакомый API, плюс встроенная поддержка асинхронности (можно лить сотни запросов параллельно), HTTP/2 и таймаутов из коробки. Для тяжёлого параллельного забора это решает. Учтите: HTTP/2 не входит в базовую установку — для `http2=True` нужен extra-пакет `httpx[http2]` (он подтянет зависимость `h2`).
 
 ### Пагинация
 
@@ -422,8 +422,9 @@ def fetch_all_events(base_url: str) -> list[dict]:
 Контракт на очищенные данные через Pandera. Это и есть формальное описание «какими данные должны быть».
 
 ```python
+import polars as pl
 import pandera.polars as pa
-from pandera.typing import Series
+from pandera.typing.polars import Series
 
 class BetsSchema(pa.DataFrameModel):
     event_id: Series[str] = pa.Field(unique=True)
@@ -431,7 +432,7 @@ class BetsSchema(pa.DataFrameModel):
     amount: Series[float] = pa.Field(ge=0, le=1_000_000)
     currency: Series[str] = pa.Field(isin=["USD", "EUR", "RUB"])
     event_type: Series[str] = pa.Field(isin=["bet", "deposit", "withdrawal"])
-    ts: Series[pa.DateTime] = pa.Field(nullable=False)
+    ts: Series[pl.Datetime] = pa.Field(nullable=False)
 
     class Config:
         strict = True  # лишние колонки запрещены
