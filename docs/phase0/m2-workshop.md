@@ -10,6 +10,17 @@
 
 Артефакт на выходе — один файл `game_core.py`: модуль с решениями всех задач плюс блок мини-тестов на `assert`, который проходит при запуске `uv run python game_core.py`. Это твой первый «питоничный» модуль, который не стыдно показать на ревью.
 
+!!! info "Как устроен этот воркшоп"
+
+    Это не лекция с готовым кодом, а задачник. Каждый содержательный шаг построен по схеме **Задача → Критерий → Решение**:
+
+    - **Задача** — что именно нужно написать руками, с явными именами выходных функций и переменных. Имена важны: критерий проверяет их буквально, опечатка даст `NameError`.
+    - **Критерий шага** — кусок кода с `assert`, который ты запускаешь после своего решения. Зелёный прогон (без ошибки) = шаг сдан. Это твой локальный авто-грейдер, аналог кнопки «Проверить».
+    - **Решение** спрятано под спойлер `Решение`. Открывай его только после своей попытки — чтобы сверить подход, а не списать.
+    - **Числовые разминки** проверяются прямо на странице: посчитай число, впиши в поле, нажми «Проверить».
+
+    Все `assert` рассчитаны на сгенерированные данные с `seed=42`. Не меняй seed, иначе числа поплывут.
+
 ## Бизнес-кейс
 
 Этот модуль кажется учебным, но руками ты собираешь то, на чём в реальной команде стоят продуктовые отчёты: retention, объём депозитов, LTV игрока, топ-игры. Навык писать такой код корректно и без утечек памяти — это не про синтаксис, это про то, можно ли доверять цифре, по которой примут решение на деньги. Один баг новичка из этого модуля (ярлык вместо копии, дубли в retention, изменяемый дефолт, загрузка всего лога в память) — и стейкхолдер увидит неверное число, не зная об этом.
@@ -25,6 +36,8 @@
 ## Данные
 
 Данные синтетические, генерируются прямо в модуле с фиксированным seed — запустится у любого без скачиваний. Имитируем поток событий гемблинг-платформы: депозиты, ставки, выводы. Формат — список словарей (как распарсенный JSONL-лог).
+
+Это setup-код, а не задача — скопируй и запусти как есть. Дальше ты будешь относиться к `events` как к финальному снимку лога.
 
 ```python
 import random
@@ -53,7 +66,27 @@ def make_events(n_players: int = 200, days: int = 40, seed: int = 42) -> list[di
     return events
 ```
 
-При `seed=42` всегда получается один и тот же поток — мини-тесты опираются на конкретные числа. Если меняешь параметры генератора, числа в `assert` тоже поменяются: пересчитай их печатью перед тем, как зашивать в тест.
+При `seed=42` всегда получается один и тот же поток (6147 событий от 200 игроков) — мини-тесты опираются на конкретные числа. Если меняешь параметры генератора, числа в `assert` тоже поменяются: пересчитай их печатью перед тем, как зашивать в тест.
+
+## Разминка: числа из бизнес-кейса
+
+Прежде чем писать код, прогрей интуицию руками на цифрах из ситуации выше. Завышенный retention — это не абстракция, а конкретная ошибка в процентных пунктах. Посчитай и впиши ответ — проверка мгновенная.
+
+```text
+TASK: Из-за дублей D1 retention показали как 30%, реальный — 22%. На сколько процентных пунктов завысили метрику? Ответ - целое число п.п.
+ANSWER: 8
+TOL: 0.1
+UNIT: п.п.
+PLACEHOLDER: целое число
+EXPLAIN: 30% - 22% = 8 п.п. Это абсолютная разница в процентных пунктах. Именно на этой завышенной цифре продакт сделал неверный вывод об онбординге. Дубли игроков в числителе/знаменателе - классический способ раздуть retention.
+---
+TASK: На сколько процентов (ОТНОСИТЕЛЬНО реальной цифры) была завышена метрика, если показали 30% вместо реальных 22%? Округли до 0.1.
+ANSWER: 36.4
+TOL: 1.0
+UNIT: %
+PLACEHOLDER: 0.0
+EXPLAIN: (30 - 22) / 22 = 0.364 = 36.4%. Относительное завышение более чем на треть. В отчёте всегда различай абсолютную (+8 п.п.) и относительную (+36%) разницу - их путаница рождает ложные ожидания у стейкхолдеров.
+```
 
 ## Ход работы
 
@@ -66,271 +99,543 @@ uv add --dev ruff mypy
 # ruff/mypy понадобятся в конце для проверки стиля и типов
 ```
 
-### Шаг 1: модель данных и копирование
+!!! note "Как прогонять критерии шагов"
 
-Зачем. Отрабатываем главную мысль модуля: `b = a` для списка — это второй ярлык, не копия. Половина багов новичка отсюда. Нужно почувствовать разницу руками, а не на словах.
+    Критерии ниже предполагают, что в начале сессии ты один раз создал входные данные:
 
-```python
-def copy_demo() -> tuple[bool, bool]:
-    a = [100, 250, 500]
-    alias = a            # тот же объект
-    real = a[:]          # поверхностная копия (новый объект)
-    alias.append(999)
-    return (a == [100, 250, 500, 999], real == [100, 250, 500])
-```
-
-Что получилось. Функция возвращает `(True, True)`: мутация через `alias` отразилась на `a` (один объект), а `real` осталась прежней. Запомни идиому копирования `a[:]` или `a.copy()`. Для `is` помни правило: только `None`, `True`, `False`.
-
-!!! question "Проверь себя"
-
-    1. Почему `alias.append(999)` изменил `a`, но не `real`?
-    2. Какой идиомой ещё можно сделать поверхностную копию списка кроме `a[:]`?
-    3. Можно ли использовать `is` для проверки `a == [100, 250, 500, 999]`? Почему нет?
-
-??? success "Ответы"
-
-    1. `alias` и `a` — два ярлыка на один объект, изменение через любой виден через оба. `real` создан срезом `a[:]` — это отдельный объект с тем же содержимым.
-    2. `a.copy()` (или `list(a)`). Для вложенных структур нужна `copy.deepcopy`.
-    3. Нет. `is` сравнивает идентичность (тот же ли объект в памяти), а нам нужно сравнить содержимое — это `==`. На списках `is` почти всегда `False`, даже при равном содержимом.
-
-### Шаг 2: коллекции и асимптотика на retention
-
-Зачем. Отрабатываем правило выбора коллекции и эффект `set` против `list` на проверке членства. Это самый частый прирост скорости в продуктовой аналитике.
-
-```python
-def day_players(events: list[dict], day_index: int) -> set[int]:
-    start = datetime(2026, 6, 1)
-    target = (start + timedelta(days=day_index)).date()
-    return {e["player_id"] for e in events
-            if datetime.fromisoformat(e["ts"]).date() == target}
-
-def d1_retention(events: list[dict], day_index: int) -> float:
-    today = day_players(events, day_index)
-    tomorrow = day_players(events, day_index + 1)
-    if not today:
-        return 0.0
-    retained = today & tomorrow          # пересечение множеств за O(1) на элемент
-    return len(retained) / len(today)
-```
-
-Что получилось. `day_players` через set-comprehension сразу дедуплицирует игроков за день. `d1_retention` использует пересечение `&` вместо вложенного цикла `for p in today: if p in tomorrow` — из $O(n \cdot m)$ получился $O(n + m)$. Идиома `if not today` вместо `len(today) == 0` — питоничная проверка пустоты.
-
-### Шаг 3: comprehensions — list, dict, set
-
-Зачем. Закрепляем визитную карточку питоничного кода. Три вида comprehension под три типичные задачи аналитика.
-
-```python
-from collections import defaultdict
-
-def comprehension_stats(events: list[dict]) -> dict:
-    deposits = [e["amount"] for e in events if e["type"] == "deposit"]   # list
-    markets = {e["market"] for e in events}                              # set
-    by_market = defaultdict(float)
-    for e in events:
-        if e["type"] == "deposit":
-            by_market[e["market"]] += e["amount"]
-    dep_by_market = {m: round(v, 2) for m, v in by_market.items()}       # dict comp
-    return {"n_deposits": len(deposits),
-            "markets": markets,
-            "dep_by_market": dep_by_market}
-```
-
-Что получилось. Список сумм депозитов, множество уникальных рынков, словарь рынок→суммарный депозит. `defaultdict(float)` убирает ручную проверку «есть ли ключ» перед `+=`. Финальный dict-comprehension только округляет — читается одним взглядом.
-
-!!! question "Проверь себя"
-
-    1. Какой тип данных вернёт `{e["market"] for e in events}` и какое его главное свойство здесь полезно?
-    2. Что в коде делает `defaultdict(float)`, от какой рутины он избавляет?
-    3. Почему для `dep_by_market` взят dict, а не list пар `(market, amount)`?
-
-??? success "Ответы"
-
-    1. `set` — множество уникальных рынков. Дедупликация бесплатна: повторяющиеся значения схлопываются автоматически.
-    2. Даёт автозначение `0.0` для отсутствующего ключа, поэтому `by_market[e["market"]] += e["amount"]` не падает с `KeyError` на первом обращении — не нужно писать `if key not in d`.
-    3. Поиск/обновление по рынку нужен за $O(1)$ и нужна уникальность ключа. dict — хеш-таблица, list пар требовал бы линейного поиска и допускал дубли.
-
-### Шаг 4: генератор для ленивого чтения
-
-Зачем. Самая важная тема модуля для больших данных. Функция с `yield` отдаёт по одному событию и не держит весь лог в памяти. Имитируем чтение JSONL-потока.
-
-```python
-import json
-from typing import Iterator, Iterable
-
-def to_jsonl_lines(events: list[dict]) -> list[str]:
-    return [json.dumps(e, ensure_ascii=False) for e in events]
-
-def read_deposits(lines: Iterable[str]) -> Iterator[dict]:
-    for line in lines:
-        e = json.loads(line)
-        if e["type"] == "deposit":
-            yield e                      # отдаём по одной записи, не строим список
-
-def total_deposit_volume(lines: Iterable[str]) -> float:
-    return round(sum(e["amount"] for e in read_deposits(lines)), 2)
-```
-
-Что получилось. `read_deposits` — генератор: при вызове не исполняется, возвращает объект-генератор, выдаёт депозиты по одному. `total_deposit_volume` суммирует через generator expression `sum(... for ...)` — без материализации списка. На логе в 50 ГБ это разница между «упало по памяти» и «прошло потоком». В реальном файле `lines` был бы `path.open()`, а не список — генератор не знает разницы.
-
-!!! question "Проверь себя"
-
-    1. Что вернёт вызов `read_deposits(lines)` — список депозитов или что-то другое?
-    2. Почему `sum(e["amount"] for e in ...)` лучше, чем `sum([e["amount"] for e in ...])` на большом логе?
-    3. Если заменить `lines` на открытый файл, что изменится в потреблении памяти?
-
-??? success "Ответы"
-
-    1. Объект-генератор. Тело не исполнится, пока кто-то не начнёт итерировать (`for`, `sum`, `next`).
-    2. Вариант с круглыми скобками — generator expression, считает потоком за константную память. Квадратные скобки сначала материализуют весь список депозитов в памяти.
-    3. Почти ничего: генератор всё равно держит одну запись за раз. Файл читается построчно лениво, в память не грузится целиком — память не зависит от размера файла.
-
-### Шаг 5: декоратор-таймер
-
-Зачем. Декоратор — обёртка, добавляющая поведение без правки функции. Пишем `@timed`, замеряющий время, с обязательным `functools.wraps`.
-
-```python
-import functools
-import time
-
-def timed(func):
-    @functools.wraps(func)               # сохраняет имя и docstring оригинала
-    def wrapper(*args, **kwargs):
-        start = time.perf_counter()
-        result = func(*args, **kwargs)
-        wrapper.last_seconds = time.perf_counter() - start
-        return result
-    wrapper.last_seconds = 0.0
-    return wrapper
-
-@timed
-def aggregate_volume(lines: list[str]) -> float:
-    return total_deposit_volume(lines)
-```
-
-Что получилось. `@timed` оборачивает `aggregate_volume`: результат тот же, но появился атрибут `wrapper.last_seconds` с длительностью последнего вызова (вместо `print`, чтобы проверять тестом). `*args, **kwargs` в `wrapper` пропускают любые аргументы насквозь. `functools.wraps` сохраняет `__name__` — без него `aggregate_volume.__name__` стало бы `"wrapper"`.
-
-### Шаг 6: класс Player и наследование
-
-Зачем. ООП там, где оно оправдано: объект со состоянием и поведением плюс dunder-методы. Класс `Player` с `__init__`, `__repr__`, методом `ltv()`, и наследник `VIPPlayer`.
-
-```python
-class Player:
-    def __init__(self, player_id: int, deposits: float, withdrawals: float = 0.0):
-        self.player_id = player_id
-        self.deposits = deposits
-        self.withdrawals = withdrawals
-
-    def ltv(self) -> float:
-        return self.deposits - self.withdrawals
-
-    def __repr__(self) -> str:
-        return f"Player(id={self.player_id}, ltv={self.ltv():.2f})"
-
-
-class VIPPlayer(Player):
-    def __init__(self, player_id, deposits, withdrawals=0.0, manager="—"):
-        super().__init__(player_id, deposits, withdrawals)
-        self.manager = manager
-
-    def ltv(self) -> float:              # VIP-бонус 10%
-        return super().ltv() * 1.1
-
-
-def build_players(events: list[dict]) -> dict[int, Player]:
-    dep = defaultdict(float)
-    wd = defaultdict(float)
-    for e in events:
-        if e["type"] == "deposit":
-            dep[e["player_id"]] += e["amount"]
-        elif e["type"] == "withdrawal":
-            wd[e["player_id"]] += e["amount"]
-    return {pid: Player(pid, round(dep[pid], 2), round(wd[pid], 2)) for pid in dep}
-```
-
-Что получилось. `Player` инкапсулирует депозиты/выводы и считает LTV. `VIPPlayer` переопределяет `ltv()` через `super().ltv() * 1.1` — наследование с расширением. `build_players` собирает словарь `id → Player` из потока событий. `__repr__` делает печать объекта читаемой.
-
-!!! question "Проверь себя"
-
-    1. Что делает `super().ltv()` в `VIPPlayer` и почему это лучше, чем переписать формулу заново?
-    2. Зачем нужен `__repr__`, если LTV и так можно получить методом?
-    3. Почему `withdrawals` задан дефолтом `0.0`, а не пустым списком — связь с ловушкой модуля?
-
-??? success "Ответы"
-
-    1. Вызывает `ltv()` родителя (базовую формулу `deposits - withdrawals`), затем VIP добавляет бонус. Не дублируем логику: если базовая формула изменится, VIP подхватит автоматически.
-    2. `__repr__` задаёт текстовое представление объекта при печати и в отладке — видишь `Player(id=5, ltv=320.00)` вместо `<...object at 0x...>`. Это для людей и логов, а не для расчётов.
-    3. `0.0` — неизменяемое число, безопасный дефолт. Изменяемый дефолт (`[]`, `{}`) вычисляется один раз при определении и живёт между вызовами — классический баг. Скаляр такой проблемы не создаёт.
-
-### Шаг 7: обработка исключений и финальная агрегация
-
-Зачем. Ловим конкретный тип исключения, а не голый `except`. Считаем безопасное отношение и собираем сводку, устойчивую к битым данным.
-
-```python
-def safe_ratio(payout, stake) -> float:
-    try:
-        return payout / stake
-    except ZeroDivisionError:
-        return 0.0
-    except TypeError:
-        raise ValueError(f"нечисловые данные: {payout!r}, {stake!r}")
-
-
-def summary(events: list[dict]) -> dict:
-    players = build_players(events)
-    top = max(players.values(), key=lambda p: p.ltv())
-    games = Counter(e["game"] for e in events if e["type"] == "bet")
-    return {"n_players": len(players),
-            "top_player_id": top.player_id,
-            "top_ltv": round(top.ltv(), 2),
-            "top3_games": games.most_common(3)}
-```
-
-Что получилось. `safe_ratio` отлавливает деление на ноль осмысленным дефолтом, а нечисловой вход превращает в говорящий `ValueError` (а не глотает молча). `summary` использует `max` с `key=lambda` для топ-игрока по LTV и `Counter.most_common(3)` для топ-игр. Не забудь `from collections import Counter` вверху модуля.
-
-### Шаг 8: мини-тесты и проверка стиля
-
-Зачем. Артефакт обязан сам себя проверять. Блок `if __name__ == "__main__"` с `assert` — простейший тест без зависимостей. Числа взяты из прогона при `seed=42`.
-
-```python
-if __name__ == "__main__":
+    ```python
     ev = make_events()
-    lines = to_jsonl_lines(ev)
+    lines = to_jsonl_lines(ev)   # понадобится с шага 4
+    ```
 
-    assert copy_demo() == (True, True)
-    assert 0.0 <= d1_retention(ev, 5) <= 1.0
-    vol = total_deposit_volume(lines)
-    assert vol == aggregate_volume(lines)
-    assert aggregate_volume.last_seconds >= 0.0
+    Каждый блок «Критерий шага» запускай после своего решения соответствующей функции. Если падает `NameError` — проверь, что назвал функцию/переменную ровно как в задаче.
 
-    p = Player(1, 300.0, 50.0)
-    vip = VIPPlayer(1, 300.0, 50.0, manager="Anna")
-    assert p.ltv() == 250.0
-    assert round(vip.ltv(), 2) == 275.0
-    assert "Player(id=1" in repr(p)
+### Шаг 1: Модель данных и копирование
 
-    assert safe_ratio(10, 0) == 0.0
-    try:
-        safe_ratio("x", 2)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("ожидался ValueError")
+**Зачем.** Отрабатываем главную мысль модуля: `b = a` для списка — это второй ярлык, не копия. Половина багов новичка отсюда. Нужно почувствовать разницу руками, а не на словах.
 
-    s = summary(ev)
-    assert s["n_players"] > 0
-    assert len(s["top3_games"]) == 3
-    print("OK:", s)
+**Задача.** Напиши функцию `copy_demo() -> tuple[bool, bool]`. Внутри: создай список `a = [100, 250, 500]`, сделай ярлык `alias = a` (тот же объект) и поверхностную копию `real = a[:]` (новый объект), затем `alias.append(999)`. Верни кортеж из двух проверок: изменился ли `a` (стал `[100, 250, 500, 999]`) и осталась ли `real` прежней (`[100, 250, 500]`). Имя функции `copy_demo` критерий проверяет буквально.
+
+**Критерий шага:**
+
+```python
+assert copy_demo() == (True, True), "alias меняет общий объект, real - нет"
+print("OK: разница ярлыка и копии воспроизведена")
 ```
 
-Запусти и прогони линтер с типами.
+??? tip "Подсказка"
+
+    `alias = a` не создаёт новый список — обе переменные указывают на один объект в памяти. Чтобы получить независимую копию, нужен срез `a[:]` или `a.copy()`. Сравнивай содержимое через `==`, а не через `is`.
+
+??? success "Решение"
+
+    ```python
+    def copy_demo() -> tuple[bool, bool]:
+        a = [100, 250, 500]
+        alias = a            # тот же объект
+        real = a[:]          # поверхностная копия (новый объект)
+        alias.append(999)
+        return (a == [100, 250, 500, 999], real == [100, 250, 500])
+    ```
+
+    **Почему так.** Функция возвращает `(True, True)`: мутация через `alias` отразилась на `a` (один объект), а `real` осталась прежней. Запомни идиому копирования `a[:]` или `a.copy()`. Для `is` помни правило: проверять идентичность осмысленно только с `None`, `True`, `False`, а равенство содержимого — это `==`.
+
+Проверь понимание:
+
+```text
+Q: Почему alias.append(999) изменил a, но не real?
+[ ] append всегда копирует список перед изменением
+[x] alias и a - два ярлыка на один объект, а real создан срезом a[:] и потому отдельный объект
+[ ] real защищён, потому что объявлен позже
+> alias и a указывают на один и тот же список в памяти, изменение видно через оба имени. real = a[:] создал новый объект с тем же содержимым - он не связан с a.
+---
+Q: Какой ещё идиомой можно сделать поверхностную копию списка, кроме a[:]?
+[ ] a is b
+[x] a.copy() или list(a)
+[ ] a == b
+> a.copy() и list(a) создают новый список. Для вложенных структур нужна copy.deepcopy. a == b и a is b - это сравнения, а не копирование.
+---
+Q: Можно ли проверить a == [100, 250, 500, 999] через is вместо ==?
+[ ] Да, is и == для списков взаимозаменяемы
+[x] Нет: is сравнивает идентичность объекта, а нам нужно равенство содержимого
+[ ] Да, но только если список короткий
+> is отвечает на вопрос "тот же ли это объект в памяти". Нам нужно сравнить содержимое - это ==. На списках is почти всегда False даже при равном содержимом.
+```
+
+### Шаг 2: Коллекции и асимптотика на retention
+
+**Зачем.** Отрабатываем правило выбора коллекции и эффект `set` против `list` на проверке членства. Это самый частый прирост скорости в продуктовой аналитике — и ровно тот баг (дубли игроков), что завысил retention в бизнес-кейсе.
+
+**Задача.** Напиши две функции. `day_players(events, day_index) -> set[int]` — через set-comprehension вернуть множество уникальных `player_id`, у кого есть событие в день `day_index` (отсчёт от `2026-06-01`; сравнивай `.date()`). `d1_retention(events, day_index) -> float` — доля игроков дня `day_index`, вернувшихся на следующий день: используй пересечение множеств `&`, а не вложенный цикл. На пустом сегодняшнем дне верни `0.0`. Имена `day_players` и `d1_retention` фиксированы.
+
+Сначала прикинь формулу retention руками на реальных числах дня 5 (их даст твой код): в этот день активны 10 игроков, на следующий вернулись 7 из них.
+
+```text
+TASK: В день активны 10 игроков, на следующий день вернулись 7 из них. Чему равен D1 retention в процентах? Целое число.
+ANSWER: 70
+TOL: 0.1
+UNIT: %
+PLACEHOLDER: целое число
+EXPLAIN: D1 retention = вернувшиеся / активные = 7 / 10 = 0.7 = 70%. Это и есть число, которое вернёт d1_retention(ev, 5) при seed=42 (0.7). Ключевая ловушка реального кода - дубли: если игрок попал в множество дважды, знаменатель раздувается и retention завышается, как в бизнес-кейсе.
+```
+
+**Критерий шага:**
+
+```python
+assert isinstance(day_players(ev, 5), set), "day_players должна возвращать set"
+assert len(day_players(ev, 5)) == 10, "в день 5 при seed=42 активны 10 игроков"
+r5 = d1_retention(ev, 5)
+assert abs(r5 - 0.7) < 1e-9, "retention дня 5 = 7/10 = 0.7"
+assert d1_retention([], 5) == 0.0, "пустой день -> 0.0, без деления на ноль"
+print(f"OK: D1 retention дня 5 = {r5:.2%}")
+```
+
+??? tip "Подсказка"
+
+    Пересечение множеств `today & tomorrow` сразу даёт удержанных за линейное время. Дедупликация бесплатна: set-comprehension `{e["player_id"] for e in events if ...}` схлопывает повторы сам. Проверку пустоты пиши питонично — `if not today`, а не `len(today) == 0`.
+
+??? success "Решение"
+
+    ```python
+    def day_players(events: list[dict], day_index: int) -> set[int]:
+        start = datetime(2026, 6, 1)
+        target = (start + timedelta(days=day_index)).date()
+        return {e["player_id"] for e in events
+                if datetime.fromisoformat(e["ts"]).date() == target}
+
+    def d1_retention(events: list[dict], day_index: int) -> float:
+        today = day_players(events, day_index)
+        tomorrow = day_players(events, day_index + 1)
+        if not today:
+            return 0.0
+        retained = today & tomorrow          # пересечение множеств, O(1) на элемент
+        return len(retained) / len(today)
+    ```
+
+    **Почему так.** `day_players` через set-comprehension сразу дедуплицирует игроков за день — это и есть защита от бага «30% вместо 22%». `d1_retention` использует пересечение `&` вместо вложенного цикла `for p in today: if p in tomorrow` — из $O(n \cdot m)$ получился $O(n + m)$. Идиома `if not today` вместо `len(today) == 0` — питоничная проверка пустоты.
+
+Проверь понимание:
+
+```text
+Q: Почему пересечение множеств today & tomorrow быстрее вложенного цикла for p in today: if p in tomorrow?
+[ ] Множества хранят меньше данных
+[x] Проверка членства в set - в среднем O(1), а в list - O(n), поэтому из O(n*m) получается O(n+m)
+[ ] Вложенный цикл вообще не даст правильный ответ
+> set - хеш-таблица, p in set проверяется за константу. list проверяет членство линейным перебором. На больших днях разница в скорости огромная.
+---
+Q: Как дубли игроков в дне раздувают retention, как в бизнес-кейсе?
+[ ] Дубли уменьшают и числитель, и знаменатель одинаково
+[x] Если игрок попадает в подсчёт несколько раз, знаменатель (активные) раздувается и метрика искажается
+[ ] Дубли влияют только на скорость, не на число
+> Множество схлопывает дубли автоматически. Если же считать по списку без дедупликации, один игрок учитывается многократно - знаменатель и числитель разъезжаются, и метрика врёт. Set здесь не оптимизация, а корректность.
+```
+
+### Шаг 3: Comprehensions — list, dict, set
+
+**Зачем.** Закрепляем визитную карточку питоничного кода. Три вида comprehension под три типичные задачи аналитика.
+
+**Задача.** Напиши `comprehension_stats(events) -> dict`, которая возвращает словарь с тремя ключами: `n_deposits` — число событий-депозитов (через list-comprehension сумм/амаунтов), `markets` — множество уникальных рынков (set-comprehension), `dep_by_market` — словарь рынок→суммарный депозит, округлённый до 2 знаков (накопи через `defaultdict(float)`, финал собери dict-comprehension). Имя функции и ключи фиксированы.
+
+**Критерий шага:**
+
+```python
+res = comprehension_stats(ev)
+assert res["n_deposits"] == 1853, "при seed=42 ровно 1853 депозита"
+assert res["markets"] == {"RU", "UZ", "KZ", "TR"}, "четыре рынка"
+assert isinstance(res["markets"], set)
+assert len(res["dep_by_market"]) == 4 and all(v > 0 for v in res["dep_by_market"].values())
+print("OK: три comprehension отработали, депозитов:", res["n_deposits"])
+```
+
+??? tip "Подсказка"
+
+    `defaultdict(float)` отдаёт `0.0` для нового ключа, поэтому `by_market[m] += amount` не падает с `KeyError` на первом обращении — не нужен `if m not in d`. Финальный dict-comprehension только округляет уже накопленные суммы.
+
+??? success "Решение"
+
+    ```python
+    from collections import defaultdict
+
+    def comprehension_stats(events: list[dict]) -> dict:
+        deposits = [e["amount"] for e in events if e["type"] == "deposit"]   # list
+        markets = {e["market"] for e in events}                              # set
+        by_market = defaultdict(float)
+        for e in events:
+            if e["type"] == "deposit":
+                by_market[e["market"]] += e["amount"]
+        dep_by_market = {m: round(v, 2) for m, v in by_market.items()}       # dict comp
+        return {"n_deposits": len(deposits),
+                "markets": markets,
+                "dep_by_market": dep_by_market}
+    ```
+
+    **Почему так.** Список сумм депозитов, множество уникальных рынков, словарь рынок→суммарный депозит. `defaultdict(float)` убирает ручную проверку «есть ли ключ» перед `+=`. Финальный dict-comprehension только округляет — читается одним взглядом. При seed=42 это 1853 депозита по четырём рынкам.
+
+Проверь понимание:
+
+```text
+Q: Какой тип вернёт {e["market"] for e in events} и какое свойство здесь полезно?
+[ ] list, полезен порядок
+[x] set - множество уникальных рынков, дедупликация повторов бесплатна
+[ ] dict, полезен доступ по ключу
+> Фигурные скобки без пар ключ:значение дают set-comprehension. Повторяющиеся рынки схлопываются автоматически - получаем уникальные значения без ручной фильтрации.
+---
+Q: От какой рутины избавляет defaultdict(float)?
+[ ] От импорта collections
+[x] От проверки "есть ли ключ" перед += : новый ключ сразу получает 0.0
+[ ] От округления значений
+> defaultdict(float) подставляет 0.0 для отсутствующего ключа, поэтому by_market[m] += amount работает с первого обращения без KeyError. Не нужно писать if m not in d: d[m] = 0.
+---
+Q: Почему dep_by_market сделан dict, а не списком пар (market, amount)?
+[ ] Список пар занимает больше памяти
+[x] Нужны уникальность ключа и доступ/обновление по рынку за O(1); list пар требовал бы линейного поиска и допускал дубли
+[ ] dict печатается красивее
+> dict - хеш-таблица: поиск и обновление по рынку за константу, ключ уникален. Список пар (market, amount) пришлось бы перебирать линейно и он не гарантирует единственность рынка.
+```
+
+### Шаг 4: Генератор для ленивого чтения
+
+**Зачем.** Самая важная тема модуля для больших данных. Функция с `yield` отдаёт по одному событию и не держит весь лог в памяти. Имитируем чтение JSONL-потока — именно так читается лог на десятки ГБ, который иначе «упадёт по памяти».
+
+**Задача.** Напиши три функции. `to_jsonl_lines(events) -> list[str]` — сериализуй каждое событие в JSON-строку (`json.dumps(..., ensure_ascii=False)`). `read_deposits(lines) -> Iterator[dict]` — генератор: итерируйся по строкам, парси `json.loads`, и через `yield` отдавай только депозиты (не строй список). `total_deposit_volume(lines) -> float` — сумма `amount` депозитов через generator expression `sum(... for ...)`, округли до 2 знаков. Имена фиксированы; `read_deposits` обязан быть генератором (`yield`, а не `return [...]`).
+
+**Критерий шага:**
+
+```python
+import types
+gen = read_deposits(lines)
+assert isinstance(gen, types.GeneratorType), "read_deposits должна быть генератором (yield)"
+vol = total_deposit_volume(lines)
+assert abs(vol - 460181.98) < 0.01, "объём депозитов при seed=42 = 460181.98"
+print(f"OK: объём депозитов = {vol}")
+```
+
+??? tip "Подсказка"
+
+    Генератор не исполняет тело при вызове — он возвращает объект-генератор, который выдаёт значения по одному при итерации (`for`, `sum`, `next`). Используй круглые скобки в `sum(e["amount"] for e in read_deposits(lines))` — это generator expression, он считает потоком, без материализации списка.
+
+??? success "Решение"
+
+    ```python
+    import json
+    from typing import Iterator, Iterable
+
+    def to_jsonl_lines(events: list[dict]) -> list[str]:
+        return [json.dumps(e, ensure_ascii=False) for e in events]
+
+    def read_deposits(lines: Iterable[str]) -> Iterator[dict]:
+        for line in lines:
+            e = json.loads(line)
+            if e["type"] == "deposit":
+                yield e                      # отдаём по одной записи, не строим список
+
+    def total_deposit_volume(lines: Iterable[str]) -> float:
+        return round(sum(e["amount"] for e in read_deposits(lines)), 2)
+    ```
+
+    **Почему так.** `read_deposits` — генератор: при вызове не исполняется, возвращает объект-генератор, выдаёт депозиты по одному. `total_deposit_volume` суммирует через generator expression `sum(... for ...)` — без материализации списка. На логе в 50 ГБ это разница между «упало по памяти» и «прошло потоком». В реальном файле `lines` был бы `path.open()`, а не список — генератор не знает разницы.
+
+Проверь понимание:
+
+```text
+Q: Что вернёт сам вызов read_deposits(lines)?
+[ ] Готовый список депозитов
+[x] Объект-генератор; тело не исполнится, пока кто-то не начнёт итерировать
+[ ] Первый депозит из лога
+> Вызов генераторной функции не запускает её тело. Возвращается объект-генератор, и код выполняется лениво при итерации через for, sum или next.
+---
+Q: Почему sum(e["amount"] for e in ...) лучше sum([e["amount"] for e in ...]) на большом логе?
+[ ] Квадратные скобки дают неверную сумму
+[x] Круглые скобки - generator expression, считает потоком за константную память; квадратные сначала материализуют весь список
+[ ] Разницы нет, это стилистика
+> Generator expression выдаёт значения по одному, не строя промежуточный список. Списочный вариант сначала держит в памяти все депозиты - на большом логе это лишняя память вплоть до падения.
+---
+Q: Если заменить lines на открытый файл path.open(), что изменится в потреблении памяти?
+[ ] Память вырастет - файл загрузится целиком
+[x] Почти ничего: файл читается построчно лениво, генератор держит одну запись за раз
+[ ] Код перестанет работать - генератор не принимает файлы
+> Файловый объект итерируется построчно и не грузится в память целиком. Генератор обрабатывает по записи - потребление памяти не зависит от размера файла.
+```
+
+### Шаг 5: Декоратор-таймер
+
+**Зачем.** Декоратор — обёртка, добавляющая поведение без правки функции. Пишем `@timed`, замеряющий время, с обязательным `functools.wraps`.
+
+**Задача.** Напиши декоратор `timed(func)`: внутренний `wrapper(*args, **kwargs)` замеряет `time.perf_counter()` вокруг вызова, кладёт длительность в атрибут `wrapper.last_seconds` (а не печатает) и возвращает результат. Оберни `wrapper` в `@functools.wraps(func)`, чтобы сохранить `__name__`. Затем создай `aggregate_volume(lines)` под `@timed`, делегирующую в `total_deposit_volume`. Имена `timed`, `aggregate_volume` и атрибут `last_seconds` фиксированы.
+
+**Критерий шага:**
+
+```python
+res = aggregate_volume(lines)
+assert res == total_deposit_volume(lines), "декоратор не должен менять результат"
+assert aggregate_volume.last_seconds >= 0.0, "должно появиться время последнего вызова"
+assert aggregate_volume.__name__ == "aggregate_volume", "functools.wraps сохраняет имя"
+print(f"OK: время последнего вызова {aggregate_volume.last_seconds:.4f} c")
+```
+
+??? tip "Подсказка"
+
+    `*args, **kwargs` в `wrapper` пропускают любые аргументы насквозь — декоратор не должен знать сигнатуру оборачиваемой функции. Атрибут вешается на сам `wrapper` (`wrapper.last_seconds = ...`), чтобы читать его снаружи как `aggregate_volume.last_seconds`. Без `functools.wraps` имя функции стало бы `"wrapper"`.
+
+??? success "Решение"
+
+    ```python
+    import functools
+    import time
+
+    def timed(func):
+        @functools.wraps(func)               # сохраняет имя и docstring оригинала
+        def wrapper(*args, **kwargs):
+            start = time.perf_counter()
+            result = func(*args, **kwargs)
+            wrapper.last_seconds = time.perf_counter() - start
+            return result
+        wrapper.last_seconds = 0.0
+        return wrapper
+
+    @timed
+    def aggregate_volume(lines: list[str]) -> float:
+        return total_deposit_volume(lines)
+    ```
+
+    **Почему так.** `@timed` оборачивает `aggregate_volume`: результат тот же, но появился атрибут `last_seconds` с длительностью последнего вызова (вместо `print`, чтобы проверять тестом). `*args, **kwargs` в `wrapper` пропускают любые аргументы насквозь. `functools.wraps` сохраняет `__name__` — без него `aggregate_volume.__name__` стало бы `"wrapper"`, что ломает логи и интроспекцию.
+
+### Шаг 6: Класс Player и наследование
+
+**Зачем.** ООП там, где оно оправдано: объект со состоянием и поведением плюс dunder-методы. Класс `Player` с `__init__`, `__repr__`, методом `ltv()`, и наследник `VIPPlayer`.
+
+**Задача.** Напиши класс `Player(player_id, deposits, withdrawals=0.0)` с методом `ltv()` (возвращает `deposits - withdrawals`) и `__repr__`, печатающим `Player(id=..., ltv=...)`. Напиши наследника `VIPPlayer`, который через `super().__init__(...)` добавляет атрибут `manager` и переопределяет `ltv()` как базовый LTV с бонусом +10% (`super().ltv() * 1.1`). Добавь `build_players(events) -> dict[int, Player]` — собери депозиты и выводы по игрокам через `defaultdict(float)` и верни словарь `id → Player`. Имена `Player`, `VIPPlayer`, `ltv`, `build_players` фиксированы.
+
+Перед кодом посчитай ожидаемый LTV руками — это и проверит критерий:
+
+```text
+TASK: У игрока депозиты 300.0, выводы 50.0. Чему равен LTV = deposits - withdrawals? Целое число.
+ANSWER: 250
+TOL: 0.1
+PLACEHOLDER: целое число
+EXPLAIN: LTV = 300 - 50 = 250. Это базовая формула метода Player.ltv(). Простая разница, но именно она ляжет в основу VIP-расчёта и отчёта по топ-игрокам.
+---
+TASK: VIP-игрок имеет базовый LTV 250 и бонус +10%. Чему равен его итоговый LTV? Целое число.
+ANSWER: 275
+TOL: 0.1
+PLACEHOLDER: целое число
+EXPLAIN: 250 * 1.1 = 275. VIPPlayer.ltv() вызывает super().ltv() (базовые 250) и умножает на 1.1. Переопределение через super() не дублирует формулу: поменяется база - VIP подхватит автоматически.
+```
+
+**Критерий шага:**
+
+```python
+p = Player(1, 300.0, 50.0)
+vip = VIPPlayer(1, 300.0, 50.0, manager="Anna")
+assert p.ltv() == 250.0, "базовый LTV = deposits - withdrawals"
+assert round(vip.ltv(), 2) == 275.0, "VIP = база * 1.1"
+assert "Player(id=1" in repr(p), "__repr__ должен показывать id"
+players = build_players(ev)
+assert all(isinstance(v, Player) for v in players.values())
+assert len(players) == 186, "при seed=42 депозиты есть у 186 игроков из 200"
+print("OK: классы и build_players работают, игроков с депозитами:", len(players))
+```
+
+??? tip "Подсказка"
+
+    В `VIPPlayer.ltv()` не переписывай формулу заново — вызови `super().ltv()` и домножь на `1.1`. В `build_players` копи депозиты и выводы в два `defaultdict(float)`, затем собери `Player` в dict-comprehension. Обрати внимание: в словарь попадут только те, у кого был депозит (ключи копятся в `dep`).
+
+??? success "Решение"
+
+    ```python
+    class Player:
+        def __init__(self, player_id: int, deposits: float, withdrawals: float = 0.0):
+            self.player_id = player_id
+            self.deposits = deposits
+            self.withdrawals = withdrawals
+
+        def ltv(self) -> float:
+            return self.deposits - self.withdrawals
+
+        def __repr__(self) -> str:
+            return f"Player(id={self.player_id}, ltv={self.ltv():.2f})"
+
+
+    class VIPPlayer(Player):
+        def __init__(self, player_id, deposits, withdrawals=0.0, manager="-"):
+            super().__init__(player_id, deposits, withdrawals)
+            self.manager = manager
+
+        def ltv(self) -> float:              # VIP-бонус 10%
+            return super().ltv() * 1.1
+
+
+    def build_players(events: list[dict]) -> dict[int, Player]:
+        dep = defaultdict(float)
+        wd = defaultdict(float)
+        for e in events:
+            if e["type"] == "deposit":
+                dep[e["player_id"]] += e["amount"]
+            elif e["type"] == "withdrawal":
+                wd[e["player_id"]] += e["amount"]
+        return {pid: Player(pid, round(dep[pid], 2), round(wd[pid], 2)) for pid in dep}
+    ```
+
+    **Почему так.** `Player` инкапсулирует депозиты/выводы и считает LTV. `VIPPlayer` переопределяет `ltv()` через `super().ltv() * 1.1` — наследование с расширением. `build_players` собирает словарь `id → Player` из потока событий. Тонкость: ключи берутся из `dep`, поэтому в словарь попадают только депозитчики — при seed=42 это 186 из 200 игроков, остальные 14 только ставили или выводили. Это нормально для LTV-отчёта, но помни об этом, если ждёшь ровно 200.
+
+Проверь понимание:
+
+```text
+Q: Что делает super().ltv() в VIPPlayer и почему это лучше, чем переписать формулу заново?
+[ ] Создаёт нового базового игрока
+[x] Вызывает ltv() родителя (базовую формулу), а VIP добавляет бонус - логика не дублируется
+[ ] Отключает переопределение метода
+> super().ltv() выполняет базовый расчёт deposits - withdrawals, поверх которого VIP накидывает +10%. Если базовая формула изменится, VIP подхватит её автоматически - нет двух копий логики.
+---
+Q: Зачем нужен __repr__, если LTV и так доступен методом?
+[ ] Без него ltv() не работает
+[x] Задаёт читаемое текстовое представление объекта при печати и отладке (для людей и логов)
+[ ] Ускоряет расчёт LTV
+> __repr__ определяет, что увидишь при print(p) или в отладчике: Player(id=5, ltv=320.00) вместо <...object at 0x...>. Это удобство для людей, а не часть расчётов.
+---
+Q: Почему withdrawals имеет дефолт 0.0, а не пустой список - при чём тут ловушка модуля?
+[ ] Списки работают медленнее чисел
+[x] 0.0 - неизменяемое число, безопасный дефолт; изменяемый дефолт ([],{}) вычисляется один раз и живёт между вызовами - классический баг
+[ ] Пустой список нельзя передать в __init__
+> Изменяемый дефолтный аргумент создаётся единожды при определении функции и разделяется между всеми вызовами - источник коварных багов. Скаляр 0.0 неизменяем и такой проблемы не создаёт.
+```
+
+### Шаг 7: Обработка исключений и финальная агрегация
+
+**Зачем.** Ловим конкретный тип исключения, а не голый `except`. Считаем безопасное отношение и собираем сводку, устойчивую к битым данным.
+
+**Задача.** Напиши `safe_ratio(payout, stake) -> float`: верни `payout / stake`, но перехвати `ZeroDivisionError` (верни `0.0`) и `TypeError` (подними осмысленный `ValueError` с пояснением, не глотай молча). Напиши `summary(events) -> dict` с ключами: `n_players` (число игроков от `build_players`), `top_player_id` и `top_ltv` (игрок с максимальным LTV через `max(..., key=lambda p: p.ltv())`), `top3_games` (топ-3 игры по числу ставок через `Counter.most_common(3)`). Имена `safe_ratio`, `summary` и ключи фиксированы. Не забудь `from collections import Counter`.
+
+**Критерий шага:**
+
+```python
+assert safe_ratio(10, 0) == 0.0, "деление на ноль -> осмысленный 0.0"
+try:
+    safe_ratio("x", 2)
+except ValueError:
+    pass
+else:
+    raise AssertionError("ожидался ValueError на нечисловом входе")
+
+s = summary(ev)
+assert s["n_players"] == 186, "игроков с депозитами 186 при seed=42"
+assert s["top_player_id"] == 29, "топ-игрок по LTV - id 29"
+assert len(s["top3_games"]) == 3, "ровно три игры в топе"
+print("OK:", s)
+```
+
+??? tip "Подсказка"
+
+    Лови исключения по конкретному типу — отдельный `except ZeroDivisionError` и отдельный `except TypeError`. Голый `except:` маскирует баги. Для топ-игрока используй `max(players.values(), key=lambda p: p.ltv())`, для топ-игр — `Counter` по полю `game` только у ставок.
+
+??? success "Решение"
+
+    ```python
+    from collections import Counter
+
+    def safe_ratio(payout, stake) -> float:
+        try:
+            return payout / stake
+        except ZeroDivisionError:
+            return 0.0
+        except TypeError:
+            raise ValueError(f"нечисловые данные: {payout!r}, {stake!r}")
+
+
+    def summary(events: list[dict]) -> dict:
+        players = build_players(events)
+        top = max(players.values(), key=lambda p: p.ltv())
+        games = Counter(e["game"] for e in events if e["type"] == "bet")
+        return {"n_players": len(players),
+                "top_player_id": top.player_id,
+                "top_ltv": round(top.ltv(), 2),
+                "top3_games": games.most_common(3)}
+    ```
+
+    **Почему так.** `safe_ratio` отлавливает деление на ноль осмысленным дефолтом, а нечисловой вход превращает в говорящий `ValueError` (а не глотает молча). `summary` использует `max` с `key=lambda` для топ-игрока по LTV и `Counter.most_common(3)` для топ-игр. При seed=42 топ-игрок — id 29 с LTV 5834.18, а в топ-играх лидирует `crash`.
+
+Проверь понимание:
+
+```text
+Q: Почему safe_ratio ловит ZeroDivisionError и TypeError по отдельности, а не голым except?
+[ ] Голый except быстрее
+[x] Конкретные типы дают осмысленную реакцию на каждую ошибку; голый except маскирует и непредвиденные баги тоже
+[ ] except без типа запрещён в Python
+> Голый except: pass проглатывает любую ошибку, включая те, о которых ты не подумал, и прячет баги. Перехват по типу позволяет вернуть 0.0 на деление на ноль, но превратить нечисловой вход в явный ValueError.
+---
+Q: Зачем TypeError превращается в ValueError с текстом, а не просто return 0.0?
+[ ] ValueError работает быстрее
+[x] Нечисловой вход - это битые данные, их нельзя тихо заменить нулём; говорящая ошибка делает проблему видимой
+[ ] Так требует Counter
+> Деление на ноль - штатная ситуация (ставки нет), осмысленный 0.0. А строка вместо числа - сигнал испорченного входа: тихий 0.0 спрятал бы проблему и исказил отчёт, поэтому поднимаем явный ValueError.
+```
+
+### Шаг 8: Мини-тесты и проверка стиля
+
+**Зачем.** Артефакт обязан сам себя проверять. Блок `if __name__ == "__main__"` с `assert` — простейший тест без зависимостей. Числа взяты из прогона при `seed=42`.
+
+**Задача.** Собери в конце `game_core.py` блок `if __name__ == "__main__":`, который создаёт данные (`ev`, `lines`), прогоняет все функции и проверяет их `assert`-ами (включая отдельную проверку, что `safe_ratio("x", 2)` поднимает `ValueError` через `else: raise`), и печатает `OK: {summary}`. Затем прогони линтер и проверку типов.
+
+**Критерий шага:** запусти три команды — все три должны пройти без ошибок.
 
 ```bash
-uv run python game_core.py
-uv run ruff check game_core.py
-uv run mypy game_core.py
+uv run python game_core.py        # печатает OK: {...}, ни один assert не падает
+uv run ruff check game_core.py    # стиль PEP 8 и идиомы
+uv run mypy game_core.py          # аннотации типов
 ```
 
-Что получилось. При успехе печатается `OK: {...}` и ни один `assert` не падает. `ruff` ловит нарушения PEP 8 и идиом, `mypy` проверяет аннотации. Если `mypy` ругается на `defaultdict` или `Iterator` — добавь импорты типов и аннотации возврата, это и есть тренировка контракта на границах функций.
+??? success "Решение"
+
+    ```python
+    if __name__ == "__main__":
+        ev = make_events()
+        lines = to_jsonl_lines(ev)
+
+        assert copy_demo() == (True, True)
+        assert 0.0 <= d1_retention(ev, 5) <= 1.0
+        vol = total_deposit_volume(lines)
+        assert vol == aggregate_volume(lines)
+        assert aggregate_volume.last_seconds >= 0.0
+
+        p = Player(1, 300.0, 50.0)
+        vip = VIPPlayer(1, 300.0, 50.0, manager="Anna")
+        assert p.ltv() == 250.0
+        assert round(vip.ltv(), 2) == 275.0
+        assert "Player(id=1" in repr(p)
+
+        assert safe_ratio(10, 0) == 0.0
+        try:
+            safe_ratio("x", 2)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("ожидался ValueError")
+
+        s = summary(ev)
+        assert s["n_players"] > 0
+        assert len(s["top3_games"]) == 3
+        print("OK:", s)
+    ```
+
+    **Почему так.** При успехе печатается `OK: {...}` и ни один `assert` не падает. `ruff` ловит нарушения PEP 8 и идиом, `mypy` проверяет аннотации. Если `mypy` ругается на `defaultdict` или `Iterator` — добавь импорты типов и аннотации возврата, это и есть тренировка контракта на границах функций. Обрати внимание: тут проверка мягкая (`n_players > 0`), а в критерии шага 7 — точная (`== 186`); обе формы валидны, точная ловит регрессии жёстче.
+
+## Типичные ошибки
+
+- **Ярлык вместо копии.** `b = a` для списка — это второй ярлык на тот же объект; мутация через любой виден через оба. Копируй явно: `a[:]`, `a.copy()`, для вложенных — `copy.deepcopy`.
+- **Дубли в retention.** Подсчёт активных по списку без дедупликации раздувает знаменатель и завышает метрику — ровно баг «30% вместо 22%» из кейса. Считай уникальных через `set`.
+- **`is` вместо `==`.** `is` сравнивает идентичность объекта, `==` — содержимое. На списках/строках `is` почти всегда не то, что ты хочешь; для сравнения значений всегда `==`.
+- **Изменяемый дефолтный аргумент.** `def f(x=[])` создаёт список один раз при определении и делит его между вызовами — состояние «протекает». Дефолт делай неизменяемым (`None`, число), список создавай внутри.
+- **Материализация лога в память.** `sum([... for ...])` и `list(read_deposits(...))` грузят весь лог; на десятках ГБ — падение. Используй генераторы и generator expression — поток за константную память.
+- **Голый `except`.** `except: pass` проглатывает и те ошибки, о которых ты не думал, пряча баги. Лови конкретный тип; битые данные превращай в говорящий `ValueError`.
+- **Декоратор без `functools.wraps`.** Без него имя и docstring оборачиваемой функции теряются (`__name__` становится `"wrapper"`), ломая логи и интроспекцию.
+- **Дублирование формулы в наследнике.** Переписывать базовый расчёт в `VIPPlayer.ltv()` вместо `super().ltv()` — два источника правды; при изменении базы VIP «отстанет».
+- **Ожидание «ровно 200 игроков».** `build_players` берёт ключи из депозитов — недепозитчики не попадают (186 из 200). Знай, что считаешь: всех зарегистрированных или только депозитчиков.
+
+!!! tip "AI-копилот в этом воркшопе"
+
+    Где нейросеть реально ускорит: набросать болванку класса с `__init__`/`__repr__`, вспомнить сигнатуру `functools.wraps` или `Counter.most_common`, сгенерировать каркас декоратора и блока мини-тестов. Это рутина — делегируй.
+
+    Где AI подведёт именно здесь: (1) с лёгкостью предложит изменяемый дефолтный аргумент (`def f(x=[])`), не пометив ловушку — проверяй дефолты сам; (2) напишет `b = a` там, где нужна копия, если из контекста не очевидна мутация; (3) ради «компактности» материализует генератор в список (`list(...)`), убив выигрыш по памяти; (4) поставит голый `except` вместо конкретного типа. Вывод: синтаксис и каркас — AI; решения про идентичность объектов, память и контракты ошибок — ты.
 
 ## Критерий готовности
 
@@ -362,3 +667,7 @@ uv run mypy game_core.py
 2. Контекстный менеджер `timer(label)` через `@contextlib.contextmanager` с `try/finally`, чтобы замерять блоки кода, а не только функции. Сравни с декоратором `@timed` — когда что удобнее.
 3. `@dataclass(frozen=True)` для ключа когорты `Cohort(market, month)` и расчёт retention по когортам месяца регистрации: `dict[Cohort, dict[int, float]]`. Проверь, что `Cohort` кладётся в `set` и работает ключом dict.
 4. Конвейер генераторов `parse → filter_market → amounts → accumulate`: считай нарастающий объём депозитов по рынку через `itertools.accumulate`, докажи замером (`tracemalloc`), что лог не материализуется целиком. Сравни время наивной версии (списки + `in`) и оптимизированной (множества) на `make_events(n_players=5000)`.
+
+## Что ты закрепил
+
+Ты собрал переиспользуемый core-модуль на чистом Python: модель данных и осознанное копирование, выбор коллекции под задачу (set для дедупликации и членства за O(1)), три вида comprehension и `defaultdict`, генераторы для потоковой обработки лога без утечек памяти, декоратор с `functools.wraps`, ООП через `Player`/`VIPPlayer` с `super()` и dunder-методами, перехват исключений по конкретному типу, и самопроверяющийся блок тестов с `ruff`/`mypy`. Главное, что ты унёс: корректность цифры важнее её красоты — дубли в retention, ярлык вместо копии, изменяемый дефолт или загрузка всего лога в память тихо ломают число, по которому принимают решение на деньги. Этот фундамент несёт на себе всё, что дальше будет на pandas.

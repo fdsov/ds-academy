@@ -10,6 +10,17 @@
 
 Артефакт на выходе: один файл с двумя версиями главного пайплайна — pandas и Polars lazy — плюс замер времени и проверка, что обе дают одинаковый результат.
 
+!!! info "Как устроен этот воркшоп"
+
+    Это не лекция с готовым кодом, а задачник. Каждый шаг построен по схеме **Задача -> Критерий -> Решение**:
+
+    - **Задача** — что именно сделать руками, с явными входами и именами выходных переменных (их проверяет критерий, так что называй переменные ровно как просят, иначе получишь `NameError`).
+    - **Критерий шага** — кусок кода с `assert`, который ты запускаешь после своего решения. Зелёный прогон (без ошибки) = шаг сдан. Это твой локальный авто-грейдер.
+    - **Решение** спрятано под спойлер `Решение`. Открывай только после своей попытки — чтобы сверить подход, а не списать.
+    - **Числовые подзадачи** проверяются прямо на странице: посчитай число, впиши в поле, нажми «Проверить».
+
+    Все `assert` рассчитаны на данные с `seed=42`. Не меняй seed, иначе числа поплывут.
+
 ## Бизнес-кейс
 
 !!! example "Ситуация"
@@ -36,6 +47,8 @@
 ## Данные
 
 Никаких внешних файлов. Генерируем синтетику с фиксированным seed и сохраняем в Parquet — ровно тот формат, который модуль называет рабочим. Две таблицы: `registrations` (по строке на игрока) и `bets` (много строк на игрока).
+
+Это setup-код, а не задача — скопируй и запусти как есть. Дальше ты относишься к `registrations.parquet` и `bets.parquet` как к снимку данных продукта.
 
 ```python
 import numpy as np
@@ -79,207 +92,461 @@ bets.to_parquet("bets.parquet")
 print("registrations:", registrations.shape, "| bets:", bets.shape)
 ```
 
-Получилось: ~20k игроков и порядка 250-300k ставок с реалистичным длинным хвостом (немного китов, много мелких). `bet_ts` всегда позже `reg_ts`, поэтому когорты считаются корректно.
+Получилось: ровно 20 000 игроков и ~250k ставок с реалистичным длинным хвостом (немного китов, много мелких). `+1` в `n_bets` гарантирует, что у каждого игрока есть минимум одна ставка, поэтому в `bets` присутствуют все 20 000 игроков. `bet_ts` всегда позже `reg_ts`, поэтому когорты считаются корректно.
+
+!!! note "Почему synthetic, а не Kaggle"
+
+    Синтетика с фиксированным seed даёт воспроизводимость: твои `assert` сойдутся ровно потому, что данные у всех одинаковые. Заменить на реальные просто — подставляешь свои `registrations`/`bets` с теми же колонками (`player_id`, временная метка, числовые поля), остальной пайплайн работает без правок.
 
 ## Ход работы
 
-### Шаг 1: профиль игрока через groupby + named aggregation
+### Шаг 1: Профиль игрока через groupby + named aggregation
 
-Зачем: отрабатываем split-apply-combine и именованные агрегаты — основу любого LTV-профиля. Разбиваем по `player_id`, к каждой группе применяем набор агрегатов, собираем в таблицу.
+**Зачем.** Отрабатываем split-apply-combine и именованные агрегаты — основу любого LTV-профиля. Разбиваем по `player_id`, к каждой группе применяем набор агрегатов, собираем в таблицу «один игрок — одна строка».
+
+**Задача.** Прочитай `bets.parquet`, добавь колонку `ggr = bets - payouts`. Через `groupby("player_id")` + named aggregation собери таблицу `player_stats` с колонками: `total_ggr` (сумма GGR), `bet_count` (число ставок — через `size`), `active_days` (число уникальных календарных дней со ставками), `last_bet` (дата последней ставки). Отсортируй по `total_ggr` убыванием.
+
+??? tip "Подсказка"
+
+    `active_days` — это не число ставок и не `count`. Нужны уникальные **дни**: внутри агрегата нормализуй метку времени до даты (`s.dt.normalize()`) и посчитай `nunique()`. Named aggregation в pandas — это `agg(имя=("колонка", "функция"))`, где функцией может быть строка или lambda.
+
+**Критерий шага:**
 
 ```python
-import pandas as pd
-
-bets = pd.read_parquet("bets.parquet")
-bets["ggr"] = bets["bets"] - bets["payouts"]
-
-player_stats = (
-    bets
-    .groupby("player_id", as_index=False)
-    .agg(
-        total_ggr=("ggr", "sum"),
-        bet_count=("ggr", "size"),
-        active_days=("bet_ts", lambda s: s.dt.normalize().nunique()),
-        last_bet=("bet_ts", "max"),
-    )
-    .sort_values("total_ggr", ascending=False)
-)
-print(player_stats.head())
+assert player_stats.shape[0] == 20000, "одна строка на игрока, все 20000 делали ставки"
+assert {"total_ggr", "bet_count", "active_days", "last_bet"} <= set(player_stats.columns)
+assert player_stats["bet_count"].sum() == len(bets), "sum(bet_count) обязан равняться числу строк bets"
+assert player_stats["active_days"].max() <= player_stats["bet_count"].max(), "дней не больше, чем ставок"
+print("OK: профиль игрока собран")
 ```
 
-Что получилось: таблица «один игрок — одна строка» с суммарным GGR, числом ставок, числом активных дней и датой последней ставки. Строк ровно столько, сколько игроков делали ставки — `agg` свернул каждую группу в одну строку.
+Сколько строк окажется в `player_stats` — посчитай заранее, не запуская:
+
+```text
+TASK: Сколько строк будет в player_stats? Подсказка: n_bets = gamma(...).astype(int) + 1, то есть у каждого из 20000 игроков минимум одна ставка.
+ANSWER: 20000
+TOL: 0
+PLACEHOLDER: целое число
+UNIT: строк
+EXPLAIN: groupby("player_id") сворачивает каждую группу в одну строку. Поскольку +1 гарантирует минимум одну ставку на игрока, в bets присутствуют все 20000 игроков, значит и групп ровно 20000. Если бы кто-то не сделал ни одной ставки, его бы в bets не было и строк стало бы меньше.
+```
+
+??? success "Решение"
+
+    ```python
+    import pandas as pd
+
+    bets = pd.read_parquet("bets.parquet")
+    bets["ggr"] = bets["bets"] - bets["payouts"]
+
+    player_stats = (
+        bets
+        .groupby("player_id", as_index=False)
+        .agg(
+            total_ggr=("ggr", "sum"),
+            bet_count=("ggr", "size"),
+            active_days=("bet_ts", lambda s: s.dt.normalize().nunique()),
+            last_bet=("bet_ts", "max"),
+        )
+        .sort_values("total_ggr", ascending=False)
+    )
+    print(player_stats.head())
+    ```
+
+    **Почему так.** `agg` свернул каждую группу в одну строку — получили таблицу «один игрок — одна строка» с суммарным GGR, числом ставок, числом активных дней и датой последней ставки. Ключевая тонкость — `active_days`: `size`/`count` посчитали бы число ставок, а нам нужны уникальные **дни**, отсюда `normalize()` + `nunique()`.
+
+Проверь понимание:
+
+```text
+Q: Чем отличаются size, count и nunique в named aggregation?
+[ ] Это синонимы, результат одинаковый
+[x] size считает все строки группы, count — только не-NaN, nunique — число уникальных значений
+[ ] count работает только с числами, остальные — с любыми типами
+> size = длина группы (с NaN), count = не-NaN значения, nunique = уникальные. Для active_days нужен именно nunique по нормализованной дате, иначе посчитаешь ставки, а не дни.
+---
+Q: Почему active_days считается lambda-функцией, а не строкой "nunique"?
+[ ] Строка "nunique" в pandas не существует
+[x] Нужен nunique не по самой метке времени, а по нормализованной до даты — это сначала преобразование, потом подсчёт
+[ ] lambda работает быстрее встроенных агрегатов
+> Голый nunique по bet_ts посчитал бы уникальные моменты времени (почти все ставки уникальны до секунды). Сначала normalize() срезает время до даты, потом nunique() даёт число уникальных дней.
+```
 
 ### Шаг 2: transform — доля игрока внутри страны
 
-Зачем: это место, где видно разницу `agg` и `transform`. Нужна групповая характеристика (сумма GGR по стране), приклеенная обратно к каждой строке. `agg` бы схлопнул таблицу, `transform` сохраняет длину.
+**Зачем.** Это место, где видно разницу `agg` и `transform`. Нужна групповая характеристика (сумма GGR по стране), приклеенная обратно к каждой строке. `agg` схлопнул бы таблицу до одной строки на страну, `transform` сохраняет длину исходной таблицы.
+
+**Задача.** Приджойни к `player_stats` колонки `country` и `channel` из `registrations` (это строго один-к-одному — поставь `validate="one_to_one"`), результат назови `prof`. Затем посчитай `country_ggr` — сумму `total_ggr` по стране через `transform("sum")`, и `share_in_country = total_ggr / country_ggr` — долю игрока в кассе его страны.
+
+??? tip "Подсказка"
+
+    `transform` возвращает Series той же длины, что и исходный DataFrame, поэтому его можно сразу присвоить как новую колонку: `prof["country_ggr"] = prof.groupby("country")["total_ggr"].transform("sum")`. Если бы ты взял `agg("sum")`, получил бы по строке на страну — и приклеить обратно пришлось бы через merge.
+
+**Критерий шага:**
 
 ```python
-prof = player_stats.merge(
-    registrations[["player_id", "country", "channel"]],
-    on="player_id", how="left", validate="one_to_one",
-)
-prof["country_ggr"] = prof.groupby("country")["total_ggr"].transform("sum")
-prof["share_in_country"] = prof["total_ggr"] / prof["country_ggr"]
-print(prof.nlargest(10, "share_in_country")[["player_id", "country", "share_in_country"]])
+assert len(prof) == len(player_stats), "transform не должен менять число строк"
+assert "share_in_country" in prof.columns
+shares = prof.groupby("country")["share_in_country"].sum()
+assert ((shares - 1.0).abs() < 1e-6).all(), "доли внутри каждой страны обязаны суммироваться в 1.0"
+assert prof["share_in_country"].max() < 0.02, "ни один игрок не держит больше ~2% кассы страны"
+print("OK: доля внутри страны посчитана")
 ```
 
-Что получилось: к каждому игроку приклеена доля его GGR в его стране. Топ-10 — это «киты», на которых держится касса региона.
+??? success "Решение"
 
-!!! question "Проверь себя"
+    ```python
+    prof = player_stats.merge(
+        registrations[["player_id", "country", "channel"]],
+        on="player_id", how="left", validate="one_to_one",
+    )
+    prof["country_ggr"] = prof.groupby("country")["total_ggr"].transform("sum")
+    prof["share_in_country"] = prof["total_ggr"] / prof["country_ggr"]
+    print(prof.nlargest(10, "share_in_country")[["player_id", "country", "share_in_country"]])
+    ```
 
-    1. Почему `active_days` нельзя посчитать обычным `"count"`?
-    2. Что вернул бы `groupby("country")["total_ggr"].agg("sum")` вместо `transform("sum")` по форме?
-    3. Зачем здесь `validate="one_to_one"`?
+    **Почему так.** `transform("sum")` посчитал сумму по стране и «размножил» её обратно по строкам — длина сохранилась, и деление дало корректную долю каждого игрока. `agg("sum")` вернул бы одну строку на страну. По построению доли внутри страны суммируются ровно в 1.0 — это удобная самопроверка. `validate="one_to_one"` страхует: если в `registrations` вдруг окажется дубль `player_id`, merge упадёт, а не раздует таблицу молча.
 
-??? success "Ответы"
+Проверь понимание:
 
-    1. `count` посчитал бы число ставок, а не число уникальных дней; нужен `nunique` по нормализованной дате.
-    2. `agg` вернул бы одну строку на страну (схлопнул таблицу); `transform` вернул результат той же длины, что и группа — по строке на игрока.
-    3. `player_stats` и `registrations` оба по строке на игрока: ждём строго один-к-одному, и pandas упадёт, если внезапно появится дубль.
+```text
+Q: Что вернул бы groupby("country")["total_ggr"].agg("sum") по ФОРМЕ вместо transform("sum")?
+[ ] Ту же таблицу, только отсортированную
+[x] По одной строке на страну (схлопнутую таблицу), а не результат длины исходного DataFrame
+[ ] Ошибку, agg нельзя применять к одной колонке
+> agg агрегирует — одна строка на группу. transform возвращает результат той же длины, что и вход, поэтому только его можно присвоить обратно как колонку.
+---
+Q: Зачем здесь validate="one_to_one"?
+[ ] Чтобы merge работал быстрее
+[x] player_stats и registrations оба по строке на игрока — ждём строго 1:1, и pandas упадёт, если внезапно появится дубль ключа
+[ ] one_to_one автоматически удаляет дубликаты
+> validate не чинит данные, а проверяет ожидание. Дубль player_id справа раздул бы prof — а с validate ты узнаешь об этом сразу из исключения, а не из кривого отчёта.
+```
 
 ### Шаг 3: merge и тихий баг разъезда строк
 
-Зачем: главный молчаливый баг аналитики из модуля. Специально создаём неуникальный ключ справа и смотрим, как `left join` раздувает сумму, а `validate=` ловит это.
+**Зачем.** Главный молчаливый баг аналитики из модуля. Специально создаём неуникальный ключ справа и смотрим, как `left join` раздувает сумму, а `validate=` ловит это до того, как кривой отчёт уедет стейкхолдеру.
+
+**Задача.** Возьми `registrations[["player_id"]]`, добавь колонку `deposit = 100.0`, получи `dep`. Сделай «битую» версию `dep_bad`, приклеив к ней первые 500 строк ещё раз (дубли ключа). Сделай `left join` `registrations` с `dep_bad` без валидации, сохрани результат в `m`, и сравни число строк и сумму депозитов с истинными. Затем повтори merge с `validate="one_to_one"` в `try/except` и поймай исключение.
+
+??? tip "Подсказка: какой именно validate ловит этот баг"
+
+    Здесь связь должна быть один-к-одному: одна регистрация — одна строка депозита. Дубли сидят **справа** (в `dep_bad`). `validate="one_to_many"` НЕ поймает их, потому что «many» как раз разрешает повтор справа. Чтобы поймать неуникальный правый ключ, нужен `validate="one_to_one"` (или `"many_to_one"`) — он требует уникальности справа и упадёт с `MergeError`. Выбор значения `validate` = твоя гипотеза о структуре данных; ошибёшься в гипотезе — проверка пропустит баг.
+
+**Критерий шага:**
 
 ```python
-dep = registrations[["player_id"]].copy()
-dep["deposit"] = 100.0
-dep_bad = pd.concat([dep, dep.iloc[:500]], ignore_index=True)  # 500 дублей
-
-m = registrations.merge(dep_bad, on="player_id", how="left")
-print("строк до:", len(registrations), "| после merge:", len(m),
-      "| сумма депозитов:", m["deposit"].sum())  # раздулась
-
+assert len(registrations) == 20000
+assert len(m) == 20500, "500 дублей справа добавили 500 строк"
+assert m["deposit"].sum() == 2_050_000.0, "сумма раздулась на 500*100 = 50000 сверх истинных 2_000_000"
+# one_to_one требует уникальности справа -> поймает дубли в dep_bad
+try:
+    registrations.merge(dep_bad, on="player_id", how="left", validate="one_to_one")
+    raised = False
+except Exception:
+    raised = True
+assert raised, "validate=one_to_one обязан поймать неуникальный ключ справа"
+# а вот one_to_many НЕ ловит: 'many' разрешает повтор справа
 try:
     registrations.merge(dep_bad, on="player_id", how="left", validate="one_to_many")
-except Exception as e:
-    print("validate поймал:", type(e).__name__, e)
+    one_to_many_raised = False
+except Exception:
+    one_to_many_raised = True
+assert not one_to_many_raised, "one_to_many пропускает правые дубли — поэтому здесь нужен one_to_one"
+print("OK: разъезд строк воспроизведён и пойман через validate")
 ```
 
-Что получилось: без `validate` сумма депозитов оказалась больше истинной (500 лишних строк по 100), и это нигде не упало — отчёт бы молча соврал. С `validate="one_to_many"` pandas сразу падает с понятной ошибкой. Вывод в привычку: при каждом merge ставь `validate=` и сверяй `len()`.
+Посчитай заранее, как именно раздуется отчёт:
 
-### Шаг 4: временные ряды — resample и rolling
-
-Зачем: отрабатываем `datetime`-операции. Считаем дневной GGR (`resample`), сглаживаем 7-дневным скользящим средним (`rolling`) и считаем рост день-к-дню через `shift`.
-
-```python
-ts = bets.set_index("bet_ts").sort_index()
-
-daily = ts["ggr"].resample("D").sum()
-daily_smooth = daily.rolling(window=7, min_periods=1).mean()
-daily_growth = daily / daily.shift(1) - 1
-
-trend = pd.DataFrame({"ggr": daily, "ggr_7d": daily_smooth, "growth": daily_growth})
-print(trend.head(10))
+```text
+TASK: Сколько строк будет в m после left join registrations (20000 строк) с dep_bad, где 500 ключей задублированы?
+ANSWER: 20500
+TOL: 0
+PLACEHOLDER: целое число
+UNIT: строк
+EXPLAIN: left join по неуникальному правому ключу даёт декартово размножение совпадений. 500 ключей встречаются справа дважды -> для них по 2 строки вместо 1 -> +500 строк. Итого 20000 + 500 = 20500. Именно так отчёты тихо разъезжаются: число строк выросло, но никто на len() не смотрел.
+---
+TASK: На сколько у.е. раздулась сумма депозитов по сравнению с истинной (каждый из 20000 игроков должен дать ровно 100)?
+ANSWER: 50000
+TOL: 0
+PLACEHOLDER: целое число
+UNIT: у.е.
+EXPLAIN: Истинная сумма = 20000*100 = 2_000_000. После разъезда 500 лишних строк по 100 -> +50000. Сумма стала 2_050_000. Отчёт "соврал" на 50000 у.е., и нигде не упал — в этом и опасность.
+---
+TASK: Какую долю строк (в процентах) добавили дубли к исходным 20000 регистрациям? Округли до 0.1.
+ANSWER: 2.5
+TOL: 0.1
+PLACEHOLDER: 0.0
+UNIT: %
+EXPLAIN: 500 / 20000 = 0.025 = 2.5%. Кажется мелочью, но на сумме это уже +50000, а на реальном отчёте с миллионами строк такой "мелкий" разъезд маскируется полностью. Поэтому привычка: при каждом merge сверяй len() до и после.
 ```
 
-Что получилось: дневной ряд GGR, сглаженная кривая тренда без шума и относительный прирост к прошлому дню. `min_periods=1` убирает `NaN` в первые дни ряда.
+??? success "Решение"
 
-### Шаг 5: когортная retention-матрица через pivot_table
+    ```python
+    dep = registrations[["player_id"]].copy()
+    dep["deposit"] = 100.0
+    dep_bad = pd.concat([dep, dep.iloc[:500]], ignore_index=True)  # 500 дублей
 
-Зачем: финальная сборка из модуля — длинный формат превращаем в широкую матрицу. Это и есть инструмент cohort-анализа: строки — когорта по неделе регистрации, столбцы — неделя жизни.
+    m = registrations.merge(dep_bad, on="player_id", how="left")
+    print("строк до:", len(registrations), "| после merge:", len(m),
+          "| сумма депозитов:", m["deposit"].sum())  # раздулась
+
+    try:
+        registrations.merge(dep_bad, on="player_id", how="left", validate="one_to_one")
+    except Exception as e:
+        print("validate поймал:", type(e).__name__, e)
+    ```
+
+    **Почему так.** Без `validate` сумма депозитов оказалась 2 050 000 вместо 2 000 000 (500 лишних строк по 100), и это нигде не упало — отчёт молча соврал. С `validate="one_to_one"` pandas сразу падает с `MergeError`, потому что правый ключ не уникален. Тонкий момент: `validate="one_to_many"` здесь бы **не** сработал — «many» разрешает повтор справа, а дубли как раз там. Значение `validate` — это твоя гипотеза о структуре связи: для «одна регистрация = один депозит» гипотеза `one_to_one`. Вывод в привычку: при каждом merge ставь `validate=` под реальную структуру и сверяй `len()` до и после.
+
+### Шаг 4: Временные ряды — resample и rolling
+
+**Зачем.** Отрабатываем `datetime`-операции. Считаем дневной GGR (`resample`), сглаживаем 7-дневным скользящим средним (`rolling`) и считаем рост день-к-дню через `shift`. Это базовый набор для любого трендового дашборда.
+
+**Задача.** Поставь `bet_ts` индексом и отсортируй. Посчитай `daily` — дневной GGR через `resample("D").sum()`. Посчитай `daily_smooth` — 7-дневное скользящее среднее с `min_periods=1` (чтобы не было `NaN` в начале ряда). Посчитай `daily_growth = daily / daily.shift(1) - 1` — относительный прирост к прошлому дню. Собери всё в DataFrame `trend` с колонками `ggr`, `ggr_7d`, `growth`.
+
+??? tip "Подсказка"
+
+    `resample` работает только по datetime-индексу — сначала `set_index("bet_ts").sort_index()`. `min_periods=1` в `rolling` означает «считай среднее, даже если в окне меньше 7 точек» — иначе первые 6 дней будут `NaN`. А вот `growth` в первый день останется `NaN` законно: у первого дня нет «вчера» для `shift(1)`.
+
+**Критерий шага:**
 
 ```python
-m = bets.merge(registrations[["player_id", "reg_ts"]],
-               on="player_id", how="inner", validate="many_to_one")
-m["cohort_week"] = m["reg_ts"].dt.to_period("W").dt.start_time
-m["week_offset"] = (m["bet_ts"] - m["reg_ts"]).dt.days // 7
-
-cohort = (
-    m.groupby(["cohort_week", "week_offset"])["player_id"]
-     .nunique()
-     .reset_index(name="active_players")
-)
-retention = cohort.pivot_table(
-    index="cohort_week", columns="week_offset",
-    values="active_players", fill_value=0,
-)
-retention_pct = retention.div(retention[0], axis=0).round(3)
-print(retention_pct.iloc[:, :6])
+assert list(trend.columns) == ["ggr", "ggr_7d", "growth"]
+assert trend["ggr_7d"].isna().sum() == 0, "min_periods=1 убирает NaN в сглаженном ряду"
+import numpy as np
+assert np.isnan(trend["growth"].iloc[0]), "у первого дня нет предыдущего -> growth = NaN"
+assert trend["ggr"].sum() > 0, "суммарный GGR за период положительный (хаус в плюсе)"
+assert (trend["ggr_7d"] >= 0).mean() > 0.9, "сглаженный тренд почти всегда положительный"
+print("OK: дневной ряд, сглаживание и рост посчитаны")
 ```
 
-Что получилось: матрица retention в долях от нулевой недели. По строкам читается, как когорта тает по неделям жизни — главный отвал обычно между W0 и W1.
+??? success "Решение"
 
-!!! question "Проверь себя"
+    ```python
+    ts = bets.set_index("bet_ts").sort_index()
 
-    1. Почему `pivot_table`, а не голый `pivot`?
-    2. Что именно делит `retention.div(retention[0], axis=0)`?
-    3. Зачем `validate="many_to_one"` на этом merge?
+    daily = ts["ggr"].resample("D").sum()
+    daily_smooth = daily.rolling(window=7, min_periods=1).mean()
+    daily_growth = daily / daily.shift(1) - 1
 
-??? success "Ответы"
+    trend = pd.DataFrame({"ggr": daily, "ggr_7d": daily_smooth, "growth": daily_growth})
+    print(trend.head(10))
+    ```
 
-    1. На паре (cohort_week, week_offset) бывают дубли до агрегации; `pivot_table` агрегирует через `aggfunc`, а `pivot` упал бы на неуникальности.
-    2. Каждую строку-когорту на её же значение нулевой недели — получаем долю выживших игроков относительно старта когорты.
-    3. Много ставок (`bets`) к одной регистрации: ждём many-to-one, pandas проверит, что справа ключ уникален.
+    **Почему так.** Получился дневной ряд GGR, сглаженная кривая тренда без шума и относительный прирост к прошлому дню. `min_periods=1` убирает `NaN` в первые дни сглаженного ряда (окно ещё не накопилось), а `NaN` в `growth` у первого дня — нормально: для `shift(1)` у него нет вчерашнего значения.
 
-### Шаг 6: главный пайплайн на Polars lazy
+### Шаг 5: Когортная retention-матрица через pivot_table
 
-Зачем: тот самый перенос pandas → Polars из модуля. Берём профиль игрока (Шаг 1) как ключевой пайплайн и пишем его в ленивом режиме: `scan_parquet` не читает файл сразу, `collect` запускает оптимизированный план с pushdown и параллелизмом.
+**Зачем.** Финальная сборка из модуля — длинный формат превращаем в широкую матрицу. Это и есть инструмент cohort-анализа: строки — когорта по неделе регистрации, столбцы — неделя жизни.
+
+**Задача.** Приджойни `reg_ts` к `bets` (`inner`, `validate="many_to_one"` — много ставок к одной регистрации), результат `m`. Посчитай `cohort_week` (неделя регистрации через `dt.to_period("W").dt.start_time`) и `week_offset` (номер недели жизни: `(bet_ts - reg_ts).dt.days // 7`). Сгруппируй по `["cohort_week", "week_offset"]`, посчитай `nunique` игроков (`active_players`). Разверни в широкую матрицу `retention` через `pivot_table` (index — когорта, columns — неделя жизни, values — active_players, `fill_value=0`). Переведи в доли от нулевой недели: `retention_pct = retention.div(retention[0], axis=0).round(3)`.
+
+??? tip "Подсказка"
+
+    Бери `pivot_table`, а не `pivot`: на паре (cohort_week, week_offset) могут оказаться дубли до агрегации, `pivot_table` их свернёт через `aggfunc`, а голый `pivot` упадёт на неуникальности. Деление `retention.div(retention[0], axis=0)` делит каждую строку-когорту на её же значение нулевой недели — `axis=0` означает «выравнивай по индексу строк».
+
+**Критерий шага:**
 
 ```python
-import polars as pl
+assert (retention_pct[0] == 1.0).all(), "нулевая неделя — это 100% когорты, база отсчёта"
+assert retention_pct.shape[0] >= 8, "должно получиться около 10 недельных когорт"
+assert 0.85 <= retention_pct[1].mean() <= 0.95, "средний W1 retention по синтетике ~0.91"
+assert (retention_pct.loc[:, 1:].values <= 1.0 + 1e-9).all(), "доли не превышают 1.0 после W0"
+print("OK: retention-матрица собрана")
+```
 
-player_stats_pl = (
-    pl.scan_parquet("bets.parquet")
-    .with_columns((pl.col("bets") - pl.col("payouts")).alias("ggr"))
-    .group_by("player_id")
-    .agg(
-        pl.col("ggr").sum().alias("total_ggr"),
-        pl.len().alias("bet_count"),
-        pl.col("bet_ts").dt.date().n_unique().alias("active_days"),
-        pl.col("bet_ts").max().alias("last_bet"),
+!!! note "Синтетика != бизнес-кейс"
+
+    В бизнес-кейсе W1 retention ~19-26% — это иллюстративные цифры реального продукта. У сгенерированной синтетики W1 выходит ~0.91, потому что `life_days ~ exp(scale=14)` даёт много ставок в первые недели. Это нормально: воркшоп тренирует **механику** когортной матрицы, а не воспроизводит конкретный продуктовый кейс. На реальных данных подставишь свои `bets`/`registrations` — механика та же.
+
+??? success "Решение"
+
+    ```python
+    m = bets.merge(registrations[["player_id", "reg_ts"]],
+                   on="player_id", how="inner", validate="many_to_one")
+    m["cohort_week"] = m["reg_ts"].dt.to_period("W").dt.start_time
+    m["week_offset"] = (m["bet_ts"] - m["reg_ts"]).dt.days // 7
+
+    cohort = (
+        m.groupby(["cohort_week", "week_offset"])["player_id"]
+         .nunique()
+         .reset_index(name="active_players")
     )
-    .sort("total_ggr", descending=True)
-    .collect()
-)
-print(player_stats_pl.head())
+    retention = cohort.pivot_table(
+        index="cohort_week", columns="week_offset",
+        values="active_players", fill_value=0,
+    )
+    retention_pct = retention.div(retention[0], axis=0).round(3)
+    print(retention_pct.iloc[:, :6])
+    ```
+
+    **Почему так.** Получилась матрица retention в долях от нулевой недели. По строкам читается, как когорта тает по неделям жизни. `validate="many_to_one"` подтверждает структуру (много ставок к одной регистрации), а `pivot_table` корректно сворачивает дубли пары (когорта, неделя), на которых `pivot` бы упал.
+
+Проверь понимание:
+
+```text
+Q: Почему здесь pivot_table, а не голый pivot?
+[ ] pivot устарел и удалён из pandas
+[x] На паре (cohort_week, week_offset) до агрегации бывают дубли; pivot_table сворачивает их через aggfunc, а pivot упал бы на неуникальности
+[ ] pivot не умеет fill_value
+> pivot требует уникальную пару index/columns. После groupby+nunique пара уникальна, но в общем случае надёжнее pivot_table — он агрегирует дубли, а не падает.
+---
+Q: Что именно делает retention.div(retention[0], axis=0)?
+[ ] Делит всю матрицу на скаляр retention[0]
+[x] Делит каждую строку-когорту на её собственное значение нулевой недели — получаем долю выживших относительно старта
+[ ] Делит по столбцам, нормируя каждую неделю жизни
+> axis=0 выравнивает делитель по индексу строк: каждая когорта делится на свой W0. Поэтому столбец W0 везде равен 1.0 — это база отсчёта.
 ```
 
-Что получилось: структурно тот же отчёт, но без индекса и в выражениях `pl.col(...)`. За `scan_parquet` Polars прочитает с диска только нужные столбцы (projection pushdown) и распараллелит агрегацию по ядрам.
+### Шаг 6: Главный пайплайн на Polars lazy
 
-### Шаг 7: замер скорости и проверка совпадения
+**Зачем.** Тот самый перенос pandas -> Polars из модуля. Берём профиль игрока (Шаг 1) как ключевой пайплайн и пишем его в ленивом режиме: `scan_parquet` не читает файл сразу, `collect` запускает оптимизированный план с pushdown и параллелизмом.
 
-Зачем: модуль обещает выигрыш Polars — проверяем руками, а не на веру. И обязательно сверяем, что результаты совпадают: быстрый, но неверный пайплайн бесполезен.
+**Задача.** Перепиши профиль игрока из Шага 1 на Polars lazy. Начни с `pl.scan_parquet("bets.parquet")`, добавь колонку `ggr`, сгруппируй по `player_id`, посчитай те же агрегаты (`total_ggr`, `bet_count` через `pl.len()`, `active_days` через `pl.col("bet_ts").dt.date().n_unique()`, `last_bet`), отсортируй по `total_ggr` убыванием и заверши `.collect()`. Результат назови `player_stats_pl`.
+
+??? tip "Подсказка"
+
+    В Polars нет `as_index` и lambda-агрегатов — всё через выражения `pl.col(...)`. Число строк группы — это `pl.len()` (аналог `size`). Уникальные дни — `pl.col("bet_ts").dt.date().n_unique()`. `scan_parquet` (lazy) вместо `read_parquet` (eager) — именно он включает projection/predicate pushdown; план исполняется только на `.collect()`.
+
+**Критерий шага:**
 
 ```python
-import time
-
-def bench(fn, n=5):
-    best = float("inf")
-    for _ in range(n):
-        t0 = time.perf_counter()
-        out = fn()
-        best = min(best, time.perf_counter() - t0)
-    return best, out
-
-def pandas_pipe():
-    b = pd.read_parquet("bets.parquet")
-    b["ggr"] = b["bets"] - b["payouts"]
-    return (b.groupby("player_id", as_index=False)
-             .agg(total_ggr=("ggr", "sum"), bet_count=("ggr", "size")))
-
-def polars_pipe():
-    return (pl.scan_parquet("bets.parquet")
-              .with_columns((pl.col("bets") - pl.col("payouts")).alias("ggr"))
-              .group_by("player_id")
-              .agg(pl.col("ggr").sum().alias("total_ggr"),
-                   pl.len().alias("bet_count"))
-              .collect())
-
-t_pd, r_pd = bench(pandas_pipe)
-t_pl, r_pl = bench(polars_pipe)
-print(f"pandas: {t_pd*1000:.1f} ms | polars: {t_pl*1000:.1f} ms | speedup x{t_pd/t_pl:.1f}")
-
-check = (r_pd.sort_values("player_id").reset_index(drop=True)["total_ggr"].round(2)
-         .equals(r_pl.sort("player_id").to_pandas()["total_ggr"].round(2)))
-print("результаты совпадают:", check)
+assert player_stats_pl.shape == (20000, 5), "20000 игроков, 5 колонок"
+assert {"player_id", "total_ggr", "bet_count", "active_days", "last_bet"} <= set(player_stats_pl.columns)
+assert player_stats_pl["total_ggr"].is_sorted(descending=True), "отсортировано по total_ggr убыванием"
+print("OK: профиль игрока на Polars lazy собран")
 ```
 
-Что получилось: Polars стабильно быстрее (на этом объёме обычно в 2-6 раз, разрыв растёт с данными за счёт pushdown и многопоточности), и проверка `equals` подтверждает идентичность чисел. Это и есть твой артефакт — две версии одного пайплайна плюс доказательство корректности.
+??? success "Решение"
+
+    ```python
+    import polars as pl
+
+    player_stats_pl = (
+        pl.scan_parquet("bets.parquet")
+        .with_columns((pl.col("bets") - pl.col("payouts")).alias("ggr"))
+        .group_by("player_id")
+        .agg(
+            pl.col("ggr").sum().alias("total_ggr"),
+            pl.len().alias("bet_count"),
+            pl.col("bet_ts").dt.date().n_unique().alias("active_days"),
+            pl.col("bet_ts").max().alias("last_bet"),
+        )
+        .sort("total_ggr", descending=True)
+        .collect()
+    )
+    print(player_stats_pl.head())
+    ```
+
+    **Почему так.** Структурно тот же отчёт, но без индекса и в выражениях `pl.col(...)`. За `scan_parquet` Polars прочитает с диска только нужные столбцы (projection pushdown) и распараллелит агрегацию по ядрам. Ленивость означает, что весь план оптимизируется целиком перед исполнением на `.collect()`.
+
+Проверь понимание:
+
+```text
+Q: В чём разница scan_parquet (lazy) и read_parquet (eager) в Polars?
+[ ] scan_parquet читает быстрее за счёт сжатия
+[x] scan_parquet строит ленивый план и читает только нужное на .collect(), read_parquet грузит весь файл в память сразу
+[ ] Это синонимы, scan_parquet просто новее
+> Lazy-режим откладывает исполнение: Polars видит весь пайплайн целиком, проталкивает выбор столбцов и фильтры к чтению файла (pushdown) и читает с диска только необходимое. Eager грузит всё сразу.
+```
+
+### Шаг 7: Замер скорости и проверка совпадения
+
+**Зачем.** Модуль обещает выигрыш Polars — проверяем руками, а не на веру. И обязательно сверяем, что результаты совпадают: быстрый, но неверный пайплайн бесполезен.
+
+**Задача.** Напиши функцию `bench(fn, n=5)`, которая прогоняет `fn` n раз и возвращает лучшее время и последний результат. Оберни pandas-версию профиля (упрощённую: только `total_ggr` и `bet_count`) в `pandas_pipe`, Polars-версию — в `polars_pipe`. Замерь обе, посчитай speedup. Затем сравни результаты через `.equals()` (отсортировав обе таблицы по `player_id` и округлив `total_ggr`), сохрани булев результат в `check`.
+
+??? tip "Подсказка"
+
+    `time.perf_counter()` — монотонный таймер для бенчмарка; бери минимум из нескольких прогонов (не среднее), чтобы отсечь случайные просадки ОС. Для сравнения переведи Polars-результат в pandas через `.to_pandas()`, отсортируй обе по `player_id`, сбрось индекс и сравни округлённый `total_ggr` через `.equals()`.
+
+**Критерий шага:**
+
+```python
+assert check is True, "pandas и polars обязаны дать идентичный total_ggr"
+assert t_pd > 0 and t_pl > 0
+print(f"OK: результаты совпадают, speedup x{t_pd/t_pl:.1f}")
+```
+
+!!! note "Speedup — число плавающее"
+
+    Конкретный множитель ускорения зависит от железа, числа ядер и объёма данных. На этом объёме (~250k строк) обычно выходит x2-x6 в пользу Polars, и разрыв растёт с данными за счёт pushdown и многопоточности. Не привязывайся к конкретной цифре — важен факт «Polars стабильно быстрее **при идентичном результате**». Поэтому в критерии стоит `check is True`, а не порог на скорость.
+
+??? success "Решение"
+
+    ```python
+    import time
+
+    def bench(fn, n=5):
+        best = float("inf")
+        for _ in range(n):
+            t0 = time.perf_counter()
+            out = fn()
+            best = min(best, time.perf_counter() - t0)
+        return best, out
+
+    def pandas_pipe():
+        b = pd.read_parquet("bets.parquet")
+        b["ggr"] = b["bets"] - b["payouts"]
+        return (b.groupby("player_id", as_index=False)
+                 .agg(total_ggr=("ggr", "sum"), bet_count=("ggr", "size")))
+
+    def polars_pipe():
+        return (pl.scan_parquet("bets.parquet")
+                  .with_columns((pl.col("bets") - pl.col("payouts")).alias("ggr"))
+                  .group_by("player_id")
+                  .agg(pl.col("ggr").sum().alias("total_ggr"),
+                       pl.len().alias("bet_count"))
+                  .collect())
+
+    t_pd, r_pd = bench(pandas_pipe)
+    t_pl, r_pl = bench(polars_pipe)
+    print(f"pandas: {t_pd*1000:.1f} ms | polars: {t_pl*1000:.1f} ms | speedup x{t_pd/t_pl:.1f}")
+
+    check = (r_pd.sort_values("player_id").reset_index(drop=True)["total_ggr"].round(2)
+             .equals(r_pl.sort("player_id").to_pandas()["total_ggr"].round(2)))
+    print("результаты совпадают:", check)
+    ```
+
+    **Почему так.** Polars стабильно быстрее, и проверка `equals` подтверждает идентичность чисел. Это и есть твой артефакт — две версии одного пайплайна плюс доказательство корректности. Без проверки совпадения замер скорости бессмыслен: ускорение ценно только при том же результате.
+
+Проверь понимание:
+
+```text
+Q: Что покажет .explain() вместо .collect() в lazy-пайплайне Polars?
+[ ] Результат запроса в текстовом виде
+[x] Физический план исполнения со строками PROJECT и SELECTION — это projection/predicate pushdown
+[ ] Время выполнения каждого шага
+> .explain() печатает оптимизированный план, не исполняя его. Строки PROJECT (выбор столбцов) и SELECTION (фильтр) показывают, что Polars протолкнул их к чтению Parquet — это и есть pushdown из модуля.
+---
+Q: Почему в bench берём минимум из прогонов, а не среднее?
+[ ] Минимум всегда меньше, отчёт красивее
+[x] Минимум отсекает случайные просадки ОС (GC, переключение контекста) и ближе к «чистому» времени работы кода
+[ ] Среднее в Python считать дороже
+> Замер времени зашумлён внешними факторами, которые только замедляют. Минимум — лучшая оценка времени самого кода; среднее тянется вверх случайными выбросами.
+```
 
 !!! tip "Посмотреть план оптимизации"
 
     Замени `.collect()` на `.explain()` в любом lazy-пайплайне — Polars напечатает физический план. Увидишь строки PROJECT и SELECTION: это и есть projection/predicate pushdown из модуля, проталкивающие выбор столбцов и фильтр к чтению Parquet.
+
+## Типичные ошибки
+
+- **`count` вместо `nunique` для активных дней.** `count`/`size` считают ставки, а не уникальные дни. Нужен `normalize()` + `nunique()`, иначе «активные дни» окажутся завышены в разы.
+- **`agg` там, где нужен `transform`.** Если нужна групповая величина обратно по строкам (доля внутри страны) — это `transform`. `agg` схлопнет таблицу, и приклеить результат придётся отдельным merge.
+- **merge без `validate=` и без сверки `len()`.** Главный молчаливый баг: неуникальный ключ справа раздувает строки и суммы, отчёт врёт и не падает. Всегда ставь `validate=` и сверяй число строк до/после.
+- **`pivot` на неуникальной паре.** Голый `pivot` падает на дублях index/columns. Для когортных матриц бери `pivot_table` с `aggfunc`.
+- **`rolling` без `min_periods`.** Первые дни ряда станут `NaN`, и сглаженная кривая «обрежется» в начале. `min_periods=1` это чинит.
+- **Замер скорости без проверки результата.** Быстрый, но неверный пайплайн бесполезен. Сначала `equals`, потом гордись speedup.
+- **`read_parquet` вместо `scan_parquet` в Polars.** Eager-чтение грузит весь файл и теряет pushdown. Для пайплайна используй lazy `scan_parquet` + `collect`.
+- **Путаница eager/lazy.** Забыл `.collect()` — получишь `LazyFrame`, а не данные. План не исполнится сам.
+
+!!! tip "AI-копилот в этом воркшопе"
+
+    Где нейросеть реально ускорит: вспомнить сигнатуру named aggregation и `pivot_table`, перевести pandas-выражение в эквивалент Polars `pl.col(...)`, накидать болванку `bench`, объяснить разницу `agg`/`transform`/`size`/`nunique`. Это рутина — делегируй.
+
+    Где AI подведёт именно здесь: (1) предложит merge без `validate=` и не предупредит про разъезд строк — проверку структуры всегда держи на себе; (2) спутает `size`/`count`/`nunique` и тихо завысит «активные дни»; (3) переведёт pandas в Polars, забыв `.collect()` или подменив lazy на eager, и ты потеряешь pushdown, не заметив; (4) с радостью покажет speedup, не сверив, что результаты идентичны. Вывод: синтаксис и переводы — AI; проверка структуры данных и корректности результата — ты.
 
 ## Критерий готовности
 
@@ -296,7 +563,7 @@ print("результаты совпадают:", check)
 
 Технический артефакт (retention-матрица + профиль игрока) сам по себе Head of Retention ничего не говорит. Переведи его в решение: не «W1 = 19%», а «теряем 1.5 млн ₽ в месяц, вот что делаем». Собери короткий вывод на одну страницу по чек-листу:
 
-- [ ] **Рекомендация (что делать).** Конкретное действие из данных: на какие когорты/каналы/страны включить welcome-цепочку удержания и где притормозить закуп. Например: «отвал между W0 и W1 максимален в когортах канала X — туда welcome-бонус; в стране Y держится на 5-10 китах — отдельный VIP-трек».
+- [ ] **Рекомендация (что делать).** Конкретное действие из данных: на какие когорты/каналы/страны включить welcome-цепочку удержания и где притормозить закуп. Например: «отвал между W0 и W1 максимален в когортах канала X — туда welcome-бонус; в стране Y касса держится на 5-10 китах — отдельный VIP-трек».
 - [ ] **Эффект в деньгах или метриках.** Оцени вилкой: подъём W1 retention с 19% до 24% возвращает ~N игроков и ~M ₽ GGR в месяц; перераспределение Z% закупочного бюджета из каналов-отвала. Не абсолютная точность, а порядок величины и направление.
 - [ ] **Риски и допущения.** Считали по ставкам, а не депозитам; когорты за один месяц (сезонность не учтена); часть «отвала» может быть естественной для гемблинга. Назови это прямо, чтобы решение не приняли как факт.
 - [ ] **Следующий шаг.** Что проверить дальше: A/B welcome-цепочки на одной когорте, дотянуть депозитные данные, пересчитать retention после изменения закупа (пайплайн на Polars это позволяет делать быстро).
@@ -308,3 +575,7 @@ print("результаты совпадают:", check)
 - Добавь третий движок: тот же когортный запрос на DuckDB прямо по Parquet (`duckdb.sql(...).pl()`), без загрузки в память, и сравни время с pandas и Polars.
 - Раздуй синтетику до 5-10 млн ставок (увеличь `N_PLAYERS` и `scale`) и пересними бенчмарк — увидишь, как разрыв pandas/Polars растёт с объёмом.
 - Заверни pandas-пайплайн в единый method-chaining без промежуточных переменных и проверь через `.pipe(lambda d: (print(d.shape), d)[1])`, что формы на каждом шаге те, что ждёшь.
+
+## Что ты закрепил
+
+Ты прогнал руками всё ядро M6 на сквозном кейсе: профиль игрока через named aggregation, разницу `agg`/`transform`, ловлю разъезда строк через `validate=`, временные ряды (`resample`/`rolling`/`shift`), когортную retention-матрицу через `pivot_table` — и перенёс ключевой пайплайн на Polars lazy с честным замером и проверкой совпадения. Главное, что ты унёс: pandas-механика (split-apply-combine, широкий/длинный формат, защита merge) переносится на любой движок, а выбор Polars оправдан только тогда, когда быстрый результат при этом ещё и идентичен правильному.

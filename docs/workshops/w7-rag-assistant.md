@@ -12,6 +12,22 @@
 
     RAG — один из самых востребованных паттернов прикладного LLM в продакшене 2026 года. Он позволяет давать модели свежие и приватные знания без дообучения. Главная боль здесь не "подключить LLM", а **сделать ответы проверяемыми**: retrieval-качество и цитирование решают больше, чем выбор модели.
 
+!!! info "Как устроен этот воркшоп"
+
+    Это не лекция с готовым кодом, а задачник. Каждый шаг построен так:
+
+    - **Задача** — что именно собрать руками, с явными именами функций/классов/переменных, которые понадобятся дальше по конвейеру.
+    - **Критерий шага** — способ убедиться, что шаг сдан. Логика та же, что и кнопка «Проверить» на Stepik: Задача -> Критерий -> Решение.
+    - **Решение** спрятано под спойлер `Решение`. Открывай его только после своей попытки — чтобы сверить подход, а не списать.
+
+    Важная особенность: этот воркшоп **внешне-зависимый**. Эмбеддинги, FAISS, локальная LLM и скачивание GGUF-модели требуют установленных тяжёлых пакетов, железа и сети. Поэтому:
+
+    - офлайн-шаги (генерация корпуса, загрузка, чанкинг) проверяются авто-`assert`'ами — они детерминированы и реально прогоняются;
+    - шаги с моделями (эмбеддинги, индекс, retrieval, генерация, eval) проверяются **self-check чек-листом** — пунктами «- [ ]», которые ты подтверждаешь глазами и по выводу скрипта;
+    - числовые подзадачи проверяются прямо на странице: посчитай число, впиши в поле, нажми «Проверить».
+
+    Корпус детерминирован через `seed=7`. Не меняй seed, иначе количество документов и чанков поплывёт.
+
 ## Бизнес-кейс
 
 Ты — аналитик в команде iGaming-продукта. К тебе приходит руководитель поддержки (Head of Support): операторы тонут в разрозненной внутренней wiki по выплатам, KYC, бонусам и антифроду, тратят время на поиск и всё равно дают противоречивые ответы. Тебя просят за две недели собрать PoC внутреннего ассистента, который отвечает на вопросы саппорта **со ссылкой на источник** — и доказать, что ему можно доверять.
@@ -54,6 +70,8 @@ uv add "huggingface-hub[cli]"  # для скачивания GGUF-модели
 !!! note "Зачем синтетика, а не реальные доки"
 
     Реальная база знаний приватна и у каждого своя. Синтетический корпус фиксирует структуру (фронтматтер, заголовки, процедурные абзацы) и даёт детерминированность через `seed`, поэтому твои результаты будут сходиться с эталонными eval-числами. Когда конвейер заработает — подменишь папку `corpus/` на экспорт своей Confluence/Notion/Obsidian, и больше ничего менять не надо.
+
+Это setup-код, а не задача — скопируй и запусти как есть.
 
 ```python
 # generate_corpus.py
@@ -146,7 +164,15 @@ print(f"Сгенерировано {len(list(CORPUS.glob('*.md')))} докуме
 uv run python generate_corpus.py
 ```
 
-**Что получилось:** папка `corpus/` с 11 markdown-файлами. Восемь несут проверяемые факты (числа, сроки, правила), три — шум, чтобы retrieval не работал в тепличных условиях.
+Прежде чем идти дальше, прикинь сам, сколько файлов окажется в корпусе, и сверься с выводом скрипта:
+
+```text
+TASK: Запусти generate_corpus.py. Сколько .md файлов окажется в папке corpus/ (фактовые темы плюс шумовые документы)? Ответ - целое число.
+ANSWER: 11
+TOL: 0
+PLACEHOLDER: целое число
+EXPLAIN: 8 документов с проверяемыми фактами + 3 шумовых = 11 файлов. Шум нужен, чтобы retrieval ранжировал в неидеальных условиях, а не в стерильной выборке только из релевантных доков - иначе метрика качества будет завышена.
+```
 
 !!! tip "Заменить на реальный/публичный датасет"
 
@@ -158,139 +184,198 @@ uv run python generate_corpus.py
 
 **Зачем.** Прежде чем резать на чанки, нужно вытащить из файлов чистый текст и метаданные (источник, заголовок). Метаданные критичны: без поля `source` нечем будет цитировать, а цитирование — ядро защиты от галлюцинаций.
 
+**Задача.** Создай модуль `rag/loader.py`. Опиши датакласс `Document` с полями `source` (имя файла — пойдёт в цитату), `title`, `text`. Напиши функцию `parse_frontmatter(raw) -> (dict, str)`, которая отделяет YAML-фронтматтер от тела (без зависимости от `pyyaml` — формат у нас простой), и функцию `load_corpus(folder="corpus") -> list[Document]`, которая читает все `*.md` по алфавиту и возвращает список `Document`. Имена `Document`, `load_corpus` проверяет критерий — назови их точно так.
+
+**Критерий шага** (офлайн, авто-`assert` — реально прогоняется):
+
 ```python
-# rag/loader.py
-from pathlib import Path
-from dataclasses import dataclass
-
-@dataclass
-class Document:
-    source: str   # имя файла — пойдёт в цитату
-    title: str
-    text: str
-
-def parse_frontmatter(raw: str) -> tuple[dict, str]:
-    if not raw.startswith("---"):
-        return {}, raw
-    _, fm, body = raw.split("---", 2)
-    meta = {}
-    for line in fm.strip().splitlines():
-        if ":" in line:
-            k, v = line.split(":", 1)
-            meta[k.strip()] = v.strip()
-    return meta, body.strip()
-
-def load_corpus(folder: str = "corpus") -> list[Document]:
-    docs = []
-    for path in sorted(Path(folder).glob("*.md")):
-        meta, body = parse_frontmatter(path.read_text(encoding="utf-8"))
-        docs.append(Document(
-            source=path.name,
-            title=meta.get("title", path.stem),
-            text=body,
-        ))
-    return docs
-
-if __name__ == "__main__":
-    docs = load_corpus()
-    print(f"Загружено {len(docs)} документов")
-    print(docs[0].source, "—", docs[0].title)
+docs = load_corpus()
+assert len(docs) == 11, "ожидаем 11 документов (8 фактовых + 3 шумовых)"
+assert all(d.source.endswith(".md") for d in docs), "source должен быть именем файла"
+assert all(d.source and d.title and d.text for d in docs), "у каждого дока есть source/title/text"
+print(f"OK: загружено {len(docs)} документов, у каждого есть source для цитаты")
 ```
 
-**Что получилось.** Список объектов `Document`, где `source` хранит имя файла для будущих цитат. Парсер фронтматтера намеренно простой (без зависимости от `pyyaml`), но достаточный для нашего формата.
+??? success "Решение"
+
+    ```python
+    # rag/loader.py
+    from pathlib import Path
+    from dataclasses import dataclass
+
+    @dataclass
+    class Document:
+        source: str   # имя файла — пойдёт в цитату
+        title: str
+        text: str
+
+    def parse_frontmatter(raw: str) -> tuple[dict, str]:
+        if not raw.startswith("---"):
+            return {}, raw
+        _, fm, body = raw.split("---", 2)
+        meta = {}
+        for line in fm.strip().splitlines():
+            if ":" in line:
+                k, v = line.split(":", 1)
+                meta[k.strip()] = v.strip()
+        return meta, body.strip()
+
+    def load_corpus(folder: str = "corpus") -> list[Document]:
+        docs = []
+        for path in sorted(Path(folder).glob("*.md")):
+            meta, body = parse_frontmatter(path.read_text(encoding="utf-8"))
+            docs.append(Document(
+                source=path.name,
+                title=meta.get("title", path.stem),
+                text=body,
+            ))
+        return docs
+
+    if __name__ == "__main__":
+        docs = load_corpus()
+        print(f"Загружено {len(docs)} документов")
+        print(docs[0].source, "—", docs[0].title)
+    ```
+
+    **Почему так.** На выходе список объектов `Document`, где `source` хранит имя файла для будущих цитат. Парсер фронтматтера намеренно простой (без `pyyaml`), но достаточный для нашего формата. Сортировка `sorted(...)` даёт детерминированный порядок — это важно для воспроизводимости индекса.
 
 ### Шаг 2: Чанкинг — разбиение на куски
 
-**Зачем.** Документ целиком в контекст LLM не влезает и размывает retrieval: эмбеддинг длинного текста "усредняет" смысл, и top-k начинает промахиваться. Режем на чанки. Ключевые параметры — **размер** и **перекрытие** (overlap). Слишком большой чанк → размытый эмбеддинг и лишние токены в промпте. Слишком маленький → факт рвётся пополам, теряется контекст. Перекрытие нужно, чтобы факт на границе чанков не потерялся.
+**Зачем.** Документ целиком в контекст LLM не влезает и размывает retrieval: эмбеддинг длинного текста "усредняет" смысл, и top-k начинает промахиваться. Режем на чанки. Ключевые параметры — **размер** и **перекрытие** (overlap). Слишком большой чанк -> размытый эмбеддинг и лишние токены в промпте. Слишком маленький -> факт рвётся пополам, теряется контекст. Перекрытие нужно, чтобы факт на границе чанков не потерялся.
 
-Берём чанк ~400 символов с перекрытием 80. Для коротких процедурных доков это разумная отправная точка; режем по предложениям, чтобы не рвать факт посреди фразы.
+**Задача.** Создай `rag/chunker.py`. Опиши датакласс `Chunk` (`source`, `title`, `text`, `chunk_id`). Напиши `split_sentences(text)` (режет по границам `.!?`), `chunk_document(doc, size=400, overlap=80)` (копит предложения в буфер до `size`, при переполнении сбрасывает чанк и переносит хвост длиной `overlap` в начало следующего) и `chunk_corpus(docs, **kw)`. Каждый `Chunk` обязан тащить `source` и `title` исходного документа. Имена `Chunk`, `chunk_corpus` проверяет критерий.
 
-```python
-# rag/chunker.py
-import re
-from dataclasses import dataclass
-from rag.loader import Document
+Сначала прикинь число чанков сам — это диагностика того, понял ли ты, как работает чанкинг на коротких доках:
 
-@dataclass
-class Chunk:
-    source: str
-    title: str
-    text: str
-    chunk_id: int
-
-def split_sentences(text: str) -> list[str]:
-    parts = re.split(r"(?<=[.!?])\s+", text.strip())
-    return [p.strip() for p in parts if p.strip()]
-
-def chunk_document(doc: Document, size: int = 400, overlap: int = 80) -> list[Chunk]:
-    sentences = split_sentences(doc.text)
-    chunks, buf, cid = [], "", 0
-    for sent in sentences:
-        if len(buf) + len(sent) + 1 > size and buf:
-            chunks.append(Chunk(doc.source, doc.title, buf.strip(), cid))
-            cid += 1
-            buf = buf[-overlap:] + " " + sent  # перенос хвоста = overlap
-        else:
-            buf = (buf + " " + sent).strip()
-    if buf:
-        chunks.append(Chunk(doc.source, doc.title, buf.strip(), cid))
-    return chunks
-
-def chunk_corpus(docs: list[Document], **kw) -> list[Chunk]:
-    out = []
-    for d in docs:
-        out.extend(chunk_document(d, **kw))
-    return out
-
-if __name__ == "__main__":
-    from rag.loader import load_corpus
-    chunks = chunk_corpus(load_corpus())
-    print(f"{len(chunks)} чанков из корпуса")
-    print(chunks[0].text[:120], "...")
+```text
+TASK: Прогони чанкинг корпуса с параметрами size=400, overlap=80. Сколько чанков получится из 11 документов? Ответ - целое число.
+ANSWER: 11
+TOL: 0
+PLACEHOLDER: целое число
+EXPLAIN: Тело каждого документа короче 400 символов (максимум около 374), поэтому каждый док укладывается ровно в один чанк: 11 документов -> 11 чанков. Чанкинг начнёт реально дробить документы только когда тексты станут длиннее size - на реальной wiki с многоэкранными статьями чанков будет в разы больше, чем файлов. На этом учебном корпусе чанкинг пока "холостой", но код к длинным докам уже готов.
 ```
 
-**Что получилось.** Каждый чанк помнит свой `source` и `title` — это пронесёт цитату через весь конвейер. На нашем коротком корпусе получится ~15-25 чанков.
+**Критерий шага** (офлайн, авто-`assert` — реально прогоняется):
 
-!!! question "Проверь себя"
+```python
+chunks = chunk_corpus(load_corpus())
+assert len(chunks) == 11, "при size=400 каждый короткий док укладывается в один чанк -> 11 чанков"
+assert all(c.source.endswith(".md") and c.text for c in chunks), "чанк обязан помнить source"
+assert max(len(c.text) for c in chunks) <= 400, "ни один чанк не должен превышать size=400"
+print(f"OK: {len(chunks)} чанков, каждый помнит source")
+```
 
-    1. Что произойдёт с retrieval, если поставить размер чанка 4000 символов на этом корпусе?
-    2. Зачем перекрытие, если мы и так режем по границам предложений?
-    3. Почему `source` важно тащить именно на уровне чанка, а не только документа?
+??? success "Решение"
 
-??? success "Ответы"
+    ```python
+    # rag/chunker.py
+    import re
+    from dataclasses import dataclass
+    from rag.loader import Document
 
-    1. Почти каждый документ станет одним чанком. Эмбеддинг "усреднит" все факты документа, и на конкретный вопрос ("минимальная сумма вывода") top-k вернёт чанк, где этот факт растворён среди десяти других — релевантность по косинусу упадёт, плюс в промпт уйдёт много лишних токенов.
-    2. Граница чанка может разрезать связанную мысль из двух предложений ("Проверка занимает до 48 часов. При отклонении..."). Перекрытие гарантирует, что пограничный факт попадёт хотя бы в один чанк целиком.
-    3. После retrieval мы работаем с чанками, а не документами. Цитировать нужно ровно тот кусок, откуда взят ответ. Без `source` на чанке нечем подтвердить ответ — и вся защита от галлюцинаций рушится.
+    @dataclass
+    class Chunk:
+        source: str
+        title: str
+        text: str
+        chunk_id: int
+
+    def split_sentences(text: str) -> list[str]:
+        parts = re.split(r"(?<=[.!?])\s+", text.strip())
+        return [p.strip() for p in parts if p.strip()]
+
+    def chunk_document(doc: Document, size: int = 400, overlap: int = 80) -> list[Chunk]:
+        sentences = split_sentences(doc.text)
+        chunks, buf, cid = [], "", 0
+        for sent in sentences:
+            if len(buf) + len(sent) + 1 > size and buf:
+                chunks.append(Chunk(doc.source, doc.title, buf.strip(), cid))
+                cid += 1
+                buf = buf[-overlap:] + " " + sent  # перенос хвоста = overlap
+            else:
+                buf = (buf + " " + sent).strip()
+        if buf:
+            chunks.append(Chunk(doc.source, doc.title, buf.strip(), cid))
+        return chunks
+
+    def chunk_corpus(docs: list[Document], **kw) -> list[Chunk]:
+        out = []
+        for d in docs:
+            out.extend(chunk_document(d, **kw))
+        return out
+
+    if __name__ == "__main__":
+        from rag.loader import load_corpus
+        chunks = chunk_corpus(load_corpus())
+        print(f"{len(chunks)} чанков из корпуса")
+        print(chunks[0].text[:120], "...")
+    ```
+
+    **Почему так.** Каждый чанк помнит свой `source` и `title` — это пронесёт цитату через весь конвейер. На нашем коротком корпусе получается ровно 11 чанков (по одному на документ), и это нормально: код устроен так, чтобы дробить уже длинные документы. Не обманывайся «холостым» чанкингом — на реальной wiki именно от размера/перекрытия будет зависеть Hit Rate.
+
+Проверь понимание:
+
+```text
+Q: Что произойдёт с retrieval, если поставить размер чанка 4000 символов на этом корпусе?
+[ ] Ничего полезного и плохого, retrieval станет точнее за счёт большего контекста в одном векторе
+[x] Документы и так умещаются в один чанк; на длинных доках большой чанк "усреднит" десяток фактов и top-k начнёт промахиваться по конкретному вопросу
+[ ] FAISS откажется индексировать слишком длинные тексты
+> Эмбеддинг длинного текста размывает смысл: на вопрос "минимальная сумма вывода" вернётся чанк, где этот факт растворён среди десяти других, релевантность по косинусу упадёт, плюс в промпт уйдёт много лишних токенов.
+---
+Q: Зачем перекрытие (overlap), если мы и так режем по границам предложений?
+[ ] Overlap ускоряет поиск ближайших соседей в FAISS
+[x] Граница чанка может разрезать связанную мысль из двух предложений; overlap гарантирует, что пограничный факт попадёт хотя бы в один чанк целиком
+[ ] Overlap нужен только для англоязычных корпусов
+> Пример: "Проверка занимает до 48 часов. При отклонении..." - если граница ляжет между предложениями, связь потеряется. Перекрытие подстраховывает пограничные факты.
+---
+Q: Почему source важно тащить именно на уровне чанка, а не только документа?
+[ ] Так требует API sentence-transformers
+[x] После retrieval мы работаем с чанками, а не документами; цитировать нужно ровно тот кусок, откуда взят ответ - без source на чанке нечем подтвердить ответ
+[ ] FAISS сам хранит source, дублировать на чанке не нужно
+> Без source на чанке вся защита от галлюцинаций рушится: ответ нечем подтвердить. FAISS хранит только векторы и id, текст и метаданные он не знает.
+```
 
 ### Шаг 3: Эмбеддинги через sentence-transformers
 
 **Зачем.** Чтобы искать по смыслу, а не по словам, переводим каждый чанк в вектор. Косинусная близость векторов ≈ смысловая близость текстов. Берём `sentence-transformers` с многоязычной моделью — наш корпус на русском, а большинство дефолтных моделей заточены под английский.
 
-Модель `intfloat/multilingual-e5-base` хорошо работает с русским. У e5-моделей важная деталь: документы кодируются с префиксом `passage:`, запросы — с `query:`. Это часть их обучения, без префиксов качество заметно падает. Из более свежих многоязычных вариантов 2026 года стоит присмотреться к `Qwen3-Embedding` — он сильнее на русском, но тяжелее; e5-base оставляем дефолтом ради скорости.
+Модель `intfloat/multilingual-e5-base` хорошо работает с русским (размерность вектора — 768). У e5-моделей важная деталь: документы кодируются с префиксом `passage:`, запросы — с `query:`. Это часть их обучения, без префиксов качество заметно падает. Из более свежих многоязычных вариантов 2026 года стоит присмотреться к `Qwen3-Embedding` — он сильнее на русском, но тяжелее; e5-base оставляем дефолтом ради скорости.
 
-```python
-# rag/embedder.py
-import numpy as np
-from sentence_transformers import SentenceTransformer
+**Задача.** Создай `rag/embedder.py` с классом `Embedder`. В нём — `embed_passages(texts)`, который добавляет каждому тексту префикс `passage: ` и кодирует с `normalize_embeddings=True`, и `embed_query(text)`, который кодирует один запрос с префиксом `query: ` и нормализацией. Возвращай numpy-массивы. Имена `Embedder`, `embed_passages`, `embed_query` понадобятся на следующих шагах — назови точно.
 
-_MODEL_NAME = "intfloat/multilingual-e5-base"
+**Критерий шага** (self-check — требует скачивания модели и сети, авто-проверки нет):
 
-class Embedder:
-    def __init__(self, model_name: str = _MODEL_NAME):
-        self.model = SentenceTransformer(model_name)
+- [ ] `Embedder()` создаётся, модель `intfloat/multilingual-e5-base` подгрузилась без ошибок;
+- [ ] `embed_passages([...])` добавляет префикс `passage:` (проверь, что в коде он есть);
+- [ ] `embed_query("...")` добавляет префикс `query:` и возвращает один вектор, а не батч;
+- [ ] выставлен `normalize_embeddings=True` в обоих методах;
+- [ ] `embed_passages(["тест"]).shape[1] == 768` (размерность e5-base);
+- [ ] оба метода возвращают `numpy.ndarray` (`convert_to_numpy=True`).
 
-    def embed_passages(self, texts: list[str]) -> np.ndarray:
-        prefixed = [f"passage: {t}" for t in texts]
-        return self.model.encode(prefixed, normalize_embeddings=True,
-                                 convert_to_numpy=True, show_progress_bar=False)
+??? success "Решение"
 
-    def embed_query(self, text: str) -> np.ndarray:
-        return self.model.encode([f"query: {text}"], normalize_embeddings=True,
-                                 convert_to_numpy=True)[0]
-```
+    ```python
+    # rag/embedder.py
+    import numpy as np
+    from sentence_transformers import SentenceTransformer
 
-**Что получилось.** Векторы нормализованы (`normalize_embeddings=True`), поэтому скалярное произведение равно косинусной близости — это упростит индекс в следующем шаге. Размерность для e5-base — 768.
+    _MODEL_NAME = "intfloat/multilingual-e5-base"
+
+    class Embedder:
+        def __init__(self, model_name: str = _MODEL_NAME):
+            self.model = SentenceTransformer(model_name)
+
+        def embed_passages(self, texts: list[str]) -> np.ndarray:
+            prefixed = [f"passage: {t}" for t in texts]
+            return self.model.encode(prefixed, normalize_embeddings=True,
+                                     convert_to_numpy=True, show_progress_bar=False)
+
+        def embed_query(self, text: str) -> np.ndarray:
+            return self.model.encode([f"query: {text}"], normalize_embeddings=True,
+                                     convert_to_numpy=True)[0]
+    ```
+
+    **Почему так.** Векторы нормализованы (`normalize_embeddings=True`), поэтому скалярное произведение равно косинусной близости — это упростит индекс в следующем шаге. Размерность для e5-base — 768. Разделение `passage:`/`query:` — не косметика: модель обучалась именно с этими префиксами, и без них Hit Rate проседает на 10-20% молча, без всякой ошибки.
 
 !!! note "Почему нормализация — не косметика"
 
@@ -300,241 +385,289 @@ class Embedder:
 
 **Зачем.** Хранить векторы в numpy-массиве и считать близость в цикле — медленно и не масштабируется. FAISS — индекс для быстрого поиска ближайших соседей. Для нашего объёма берём точный `IndexFlatIP` (полный перебор, но на тысячах чанков мгновенный). Рядом с индексом храним метаданные чанков, чтобы по найденному id вернуть текст и `source`.
 
-```python
-# rag/store.py
-import faiss, pickle, numpy as np
-from pathlib import Path
-from rag.chunker import Chunk
-from rag.embedder import Embedder
+**Задача.** Создай `rag/store.py` с классом `VectorStore`: конструктор принимает размерность и создаёт `faiss.IndexFlatIP(dim)`; классметод `build(chunks, embedder)` эмбедит тексты чанков и складывает в индекс; метод `search(query_vec, k=4)` возвращает список пар `(Chunk, score)`; методы `save(path="store")` и `load(path="store")` сериализуют индекс (`faiss.write_index`) и чанки (`pickle`) рядом. Затем — скрипт `build_index.py`, который строит индекс из корпуса и сохраняет в `store/`. Имя `VectorStore` и метод `search` используются дальше.
 
-class VectorStore:
-    def __init__(self, dim: int):
-        self.index = faiss.IndexFlatIP(dim)
-        self.chunks: list[Chunk] = []
+**Критерий шага** (self-check — требует FAISS и эмбеддингов, авто-проверки нет):
 
-    @classmethod
-    def build(cls, chunks: list[Chunk], embedder: Embedder) -> "VectorStore":
-        vecs = embedder.embed_passages([c.text for c in chunks])
-        store = cls(dim=vecs.shape[1])
-        store.index.add(vecs.astype(np.float32))
-        store.chunks = chunks
-        return store
+- [ ] `build_index.py` отрабатывает без ошибок и печатает число сохранённых чанков (= 11);
+- [ ] на диске появилась папка `store/` с файлами `index.faiss` и `chunks.pkl`;
+- [ ] `VectorStore.load()` поднимает индекс и список чанков из `store/`;
+- [ ] `store.search(qv, k=4)` возвращает список пар `(Chunk, score)` длиной ≤ 4;
+- [ ] score у точного совпадения близок к 1.0 (нормализованные векторы, inner product);
+- [ ] повторный запуск `build_index.py` не пересчитывает эмбеддинги при старте `ask.py` — индекс грузится готовым.
 
-    def search(self, query_vec: np.ndarray, k: int = 4) -> list[tuple[Chunk, float]]:
-        scores, idx = self.index.search(
-            query_vec.reshape(1, -1).astype(np.float32), k)
-        return [(self.chunks[i], float(s))
-                for i, s in zip(idx[0], scores[0]) if i != -1]
+??? success "Решение"
 
-    def save(self, path: str = "store"):
-        Path(path).mkdir(exist_ok=True)
-        faiss.write_index(self.index, f"{path}/index.faiss")
-        with open(f"{path}/chunks.pkl", "wb") as f:
-            pickle.dump(self.chunks, f)
+    ```python
+    # rag/store.py
+    import faiss, pickle, numpy as np
+    from pathlib import Path
+    from rag.chunker import Chunk
+    from rag.embedder import Embedder
 
-    @classmethod
-    def load(cls, path: str = "store") -> "VectorStore":
-        idx = faiss.read_index(f"{path}/index.faiss")
-        store = cls.__new__(cls)
-        store.index = idx
-        with open(f"{path}/chunks.pkl", "rb") as f:
-            store.chunks = pickle.load(f)
-        return store
+    class VectorStore:
+        def __init__(self, dim: int):
+            self.index = faiss.IndexFlatIP(dim)
+            self.chunks: list[Chunk] = []
+
+        @classmethod
+        def build(cls, chunks: list[Chunk], embedder: Embedder) -> "VectorStore":
+            vecs = embedder.embed_passages([c.text for c in chunks])
+            store = cls(dim=vecs.shape[1])
+            store.index.add(vecs.astype(np.float32))
+            store.chunks = chunks
+            return store
+
+        def search(self, query_vec: np.ndarray, k: int = 4) -> list[tuple[Chunk, float]]:
+            scores, idx = self.index.search(
+                query_vec.reshape(1, -1).astype(np.float32), k)
+            return [(self.chunks[i], float(s))
+                    for i, s in zip(idx[0], scores[0]) if i != -1]
+
+        def save(self, path: str = "store"):
+            Path(path).mkdir(exist_ok=True)
+            faiss.write_index(self.index, f"{path}/index.faiss")
+            with open(f"{path}/chunks.pkl", "wb") as f:
+                pickle.dump(self.chunks, f)
+
+        @classmethod
+        def load(cls, path: str = "store") -> "VectorStore":
+            idx = faiss.read_index(f"{path}/index.faiss")
+            store = cls.__new__(cls)
+            store.index = idx
+            with open(f"{path}/chunks.pkl", "rb") as f:
+                store.chunks = pickle.load(f)
+            return store
+    ```
+
+    ```python
+    # build_index.py
+    from rag.loader import load_corpus
+    from rag.chunker import chunk_corpus
+    from rag.embedder import Embedder
+    from rag.store import VectorStore
+
+    chunks = chunk_corpus(load_corpus())
+    store = VectorStore.build(chunks, Embedder())
+    store.save()
+    print(f"Индекс построен: {len(chunks)} чанков сохранены в store/")
+    ```
+
+    ```bash
+    uv run python build_index.py
+    ```
+
+    **Почему так.** Папка `store/` с `index.faiss` и `chunks.pkl`. Индекс строится один раз; ассистент при старте просто грузит его за миллисекунды, не пересчитывая эмбеддинги. FAISS возвращает только id — текст и источник восстанавливаются из параллельного `chunks.pkl`.
+
+Проверь понимание:
+
+```text
+Q: Почему здесь хватает IndexFlatIP, а не IndexIVFFlat или HNSW?
+[ ] IndexFlatIP - единственный индекс FAISS, поддерживающий косинусную близость
+[x] IndexFlatIP - точный полный перебор O(N); на десятках-тысячах чанков это микросекунды, а приближённые индексы нужны от сотен тысяч-миллионов векторов
+[ ] HNSW не работает с нормализованными векторами
+> Приближённые индексы (IVF, HNSW) жертвуют точностью ради скорости и оправданы только на больших объёмах. На нашем корпусе полный перебор и точный, и мгновенный.
+---
+Q: Зачем хранить chunks.pkl рядом с индексом FAISS?
+[ ] Чтобы ускорить поиск ближайших соседей
+[x] FAISS хранит только векторы и возвращает целочисленные id; без параллельного chunks.pkl по id нельзя восстановить ни текст ответа, ни источник для цитаты
+[ ] pkl нужен, чтобы FAISS пересчитал эмбеддинги при загрузке
+> Индекс не знает ни текста, ни метаданных. id из FAISS - это просто номер строки; сопоставить его с чанком и его source можно только по сохранённому списку.
 ```
-
-Скрипт построения индекса один раз:
-
-```python
-# build_index.py
-from rag.loader import load_corpus
-from rag.chunker import chunk_corpus
-from rag.embedder import Embedder
-from rag.store import VectorStore
-
-chunks = chunk_corpus(load_corpus())
-store = VectorStore.build(chunks, Embedder())
-store.save()
-print(f"Индекс построен: {len(chunks)} чанков сохранены в store/")
-```
-
-```bash
-uv run python build_index.py
-```
-
-**Что получилось.** Папка `store/` с `index.faiss` и `chunks.pkl`. Индекс строится один раз; ассистент при старте просто грузит его за миллисекунды, не пересчитывая эмбеддинги.
-
-!!! question "Проверь себя"
-
-    1. Почему здесь хватает `IndexFlatIP`, а не `IndexIVFFlat` или HNSW?
-    2. Зачем хранить `chunks.pkl` рядом с индексом FAISS?
-
-??? success "Ответы"
-
-    1. `IndexFlatIP` — точный полный перебор, O(N) на запрос. На десятках-тысячах чанков это микросекунды. Приближённые индексы (IVF, HNSW) нужны от сотен тысяч-миллионов векторов, где полный перебор становится дорогим, и где готовы пожертвовать точностью ради скорости.
-    2. FAISS хранит только векторы и возвращает целочисленные id. Сам текст и метаданные он не знает. Без параллельного `chunks.pkl` по найденному id нельзя восстановить ни текст ответа, ни источник для цитаты.
 
 ### Шаг 5: Retrieval по запросу (top-k)
 
 **Зачем.** Это сердце "R" в RAG. На запрос пользователя достаём k наиболее близких чанков. Важная деталь продакшена — **порог релевантности**: если даже лучший чанк имеет низкий score, скорее всего в базе нет ответа, и это сигнал к отказу (Шаг 7). Эмпирически для нормализованных e5-векторов осмысленный порог — около 0.80; калибруется по своему корпусу.
 
-```python
-# rag/retriever.py
-from dataclasses import dataclass
-from rag.embedder import Embedder
-from rag.store import VectorStore
-from rag.chunker import Chunk
+**Задача.** Создай `rag/retriever.py`. Опиши датакласс `Retrieved` (`chunk`, `score`) и класс `Retriever(store, embedder, k=4, min_score=0.80)` с методом `retrieve(query) -> list[Retrieved]`: эмбедит запрос через `embed_query`, ищет top-k в сторе и **отсекает** всё, что ниже `min_score`. Имя `Retriever` и метод `retrieve` понадобятся в ассистенте и eval.
 
-@dataclass
-class Retrieved:
-    chunk: Chunk
-    score: float
+**Критерий шага** (self-check — требует индекса и эмбеддингов, авто-проверки нет):
 
-class Retriever:
-    def __init__(self, store: VectorStore, embedder: Embedder,
-                 k: int = 4, min_score: float = 0.80):
-        self.store, self.embedder = store, embedder
-        self.k, self.min_score = k, min_score
+- [ ] на вопрос "какой максимальный вывод в сутки?" первым приходит чанк из `payouts-limits.md` с высоким score;
+- [ ] шумовые документы (`misc-*.md`) не попадают в топ по этому вопросу;
+- [ ] на вопрос не из базы ("какая погода завтра") `retrieve` возвращает **пустой** список (всё отсечено порогом);
+- [ ] `retrieve` возвращает объекты `Retrieved` с полями `chunk` и `score`, а не сырые кортежи;
+- [ ] при `min_score=0.0` список не пустеет даже на нерелевантном вопросе (порог реально работает).
 
-    def retrieve(self, query: str) -> list[Retrieved]:
-        qv = self.embedder.embed_query(query)
-        hits = self.store.search(qv, k=self.k)
-        return [Retrieved(c, s) for c, s in hits if s >= self.min_score]
+??? success "Решение"
 
-if __name__ == "__main__":
-    store = VectorStore.load()
-    r = Retriever(store, Embedder())
-    for hit in r.retrieve("какой максимальный вывод в сутки?"):
-        print(f"{hit.score:.3f}  {hit.chunk.source}: {hit.chunk.text[:80]}")
-```
+    ```python
+    # rag/retriever.py
+    from dataclasses import dataclass
+    from rag.embedder import Embedder
+    from rag.store import VectorStore
+    from rag.chunker import Chunk
 
-**Что получилось.** На вопрос про лимит вывода первым чанком приходит `payouts-limits.md` с высоким score, шумовые доки отсекаются порогом. Если задать вопрос не из базы ("какая погода завтра"), список придёт пустым — это и есть триггер отказа.
+    @dataclass
+    class Retrieved:
+        chunk: Chunk
+        score: float
+
+    class Retriever:
+        def __init__(self, store: VectorStore, embedder: Embedder,
+                     k: int = 4, min_score: float = 0.80):
+            self.store, self.embedder = store, embedder
+            self.k, self.min_score = k, min_score
+
+        def retrieve(self, query: str) -> list[Retrieved]:
+            qv = self.embedder.embed_query(query)
+            hits = self.store.search(qv, k=self.k)
+            return [Retrieved(c, s) for c, s in hits if s >= self.min_score]
+
+    if __name__ == "__main__":
+        store = VectorStore.load()
+        r = Retriever(store, Embedder())
+        for hit in r.retrieve("какой максимальный вывод в сутки?"):
+            print(f"{hit.score:.3f}  {hit.chunk.source}: {hit.chunk.text[:80]}")
+    ```
+
+    **Почему так.** На вопрос про лимит вывода первым чанком приходит `payouts-limits.md` с высоким score, шумовые доки отсекаются порогом. Если задать вопрос не из базы, список придёт пустым — это и есть триггер отказа на Шаге 7. Порог — управляемая ручка между «молчит, когда знает» (слишком высокий) и «выдумывает, когда не знает» (слишком низкий).
 
 ### Шаг 6: Сборка промпта с контекстом
 
 **Зачем.** Найденные чанки надо подать LLM так, чтобы она отвечала **только** по ним и цитировала. Промпт — это контракт: жёсткая инструкция отвечать исключительно из контекста, нумерованные источники и требование ставить ссылки вида `[N]`. Это снижает галлюцинации сильнее любых уговоров "будь точным".
 
-```python
-# rag/prompt.py
-from rag.retriever import Retrieved
+**Задача.** Создай `rag/prompt.py`. Объяви строку `SYSTEM` с инструкцией: отвечать только из контекста, при отсутствии ответа — честно сказать "информации недостаточно", после каждого факта ставить ссылку `[N]`, отвечать на русском. Напиши `build_prompt(question, hits) -> (str, list[str])`, которая нумерует источники с 1, собирает блоки контекста с пометкой источника и возвращает текст промпта плюс параллельный список `sources` (порядок номеров синхронен). Имена `SYSTEM`, `build_prompt` нужны генератору и ассистенту.
 
-SYSTEM = (
-    "Ты — внутренний ассистент по документации компании. "
-    "Отвечай ТОЛЬКО на основе предоставленного контекста. "
-    "Если ответа в контексте нет — честно скажи, что информации недостаточно, "
-    "и не выдумывай. После каждого факта ставь ссылку на источник в формате [N], "
-    "где N — номер источника из списка. Отвечай кратко и по делу на русском."
-)
+**Критерий шага** (self-check — pure Python, но зависит от объектов `Retrieved` из Шага 5):
 
-def build_prompt(question: str, hits: list[Retrieved]) -> tuple[str, list[str]]:
-    sources = []
-    blocks = []
-    for i, h in enumerate(hits, 1):
-        sources.append(h.chunk.source)
-        blocks.append(f"[{i}] (источник: {h.chunk.source})\n{h.chunk.text}")
-    context = "\n\n".join(blocks)
-    user = (
-        f"Контекст:\n{context}\n\n"
-        f"Вопрос: {question}\n\n"
-        f"Ответ (с обязательными ссылками [N]):"
+- [ ] `build_prompt(q, hits)` возвращает кортеж `(prompt_text, sources)`;
+- [ ] длина `sources` равна числу переданных `hits`, порядок совпадает с нумерацией `[1], [2], ...` в тексте;
+- [ ] в `SYSTEM` явно сказано: отвечать только из контекста, при отсутствии — отказ, ставить ссылки `[N]`;
+- [ ] в собранном промпте каждый блок контекста помечен своим источником;
+- [ ] промпт заканчивается вопросом пользователя и явной просьбой дать ответ со ссылками.
+
+??? success "Решение"
+
+    ```python
+    # rag/prompt.py
+    from rag.retriever import Retrieved
+
+    SYSTEM = (
+        "Ты — внутренний ассистент по документации компании. "
+        "Отвечай ТОЛЬКО на основе предоставленного контекста. "
+        "Если ответа в контексте нет — честно скажи, что информации недостаточно, "
+        "и не выдумывай. После каждого факта ставь ссылку на источник в формате [N], "
+        "где N — номер источника из списка. Отвечай кратко и по делу на русском."
     )
-    return user, sources
-```
 
-**Что получилось.** Функция возвращает текст промпта и параллельный список источников по номерам. Нумерация в промпте и в списке `sources` синхронны — потом сверим, что модель ссылается на реально существующий источник.
+    def build_prompt(question: str, hits: list[Retrieved]) -> tuple[str, list[str]]:
+        sources = []
+        blocks = []
+        for i, h in enumerate(hits, 1):
+            sources.append(h.chunk.source)
+            blocks.append(f"[{i}] (источник: {h.chunk.source})\n{h.chunk.text}")
+        context = "\n\n".join(blocks)
+        user = (
+            f"Контекст:\n{context}\n\n"
+            f"Вопрос: {question}\n\n"
+            f"Ответ (с обязательными ссылками [N]):"
+        )
+        return user, sources
+    ```
+
+    **Почему так.** Функция возвращает текст промпта и параллельный список источников по номерам. Нумерация в промпте и в списке `sources` синхронны — потом сверим, что модель ссылается на реально существующий источник. Инструкция отвечать «только из контекста» и нумерованные источники — это и есть архитектурная, а не словесная, защита от выдумок.
 
 ### Шаг 7: Генерация ответа и защита от галлюцинаций
 
 **Зачем.** Собираем всё вместе. Два правила анти-галлюцинаций встроены жёстко, а не на доверии к модели: **(1)** если retrieval вернул пусто — мы вообще не зовём LLM, а сразу отвечаем отказом; **(2)** генерация идёт с низкой температурой, а контекст подаётся изолированно. Генератор спрятан за интерфейсом `Generator`, поэтому локальную модель можно заменить на облачную, не трогая остальной код.
 
-```python
-# rag/generator.py
-from llama_cpp import Llama
-from rag.prompt import SYSTEM
-
-class LocalGenerator:
-    """Локальная LLM через llama.cpp — данные не покидают машину."""
-    def __init__(self, model_path: str, n_ctx: int = 4096):
-        self.llm = Llama(model_path=model_path, n_ctx=n_ctx, verbose=False)
-
-    def generate(self, user_prompt: str) -> str:
-        out = self.llm.create_chat_completion(
-            messages=[{"role": "system", "content": SYSTEM},
-                      {"role": "user", "content": user_prompt}],
-            temperature=0.1, max_tokens=400)
-        return out["choices"][0]["message"]["content"].strip()
-```
-
-Скачать небольшую инструктивную модель в GGUF (квантизация Q4 — компромисс размер/качество):
+**Задача.** (1) Создай `rag/generator.py` с классом `LocalGenerator(model_path, n_ctx=4096)`: метод `generate(user_prompt) -> str` зовёт `llama.cpp` через `create_chat_completion` с системным `SYSTEM`, `temperature=0.1`, `max_tokens=400`. (2) Скачай GGUF-модель командой ниже. (3) Создай `rag/assistant.py`: датакласс `Answer(text, sources, refused)`, константу `REFUSAL` и класс `Assistant(retriever, generator)` с методом `ask(question) -> Answer`. В `ask`: если `retrieve` вернул пусто — сразу `Answer(REFUSAL, [], refused=True)` (защита №1, ДО вызова LLM); иначе собрать промпт, сгенерировать, и если в ответе нет ни одной `[` — пометить его предупреждением (защита №2). (4) Оберни в CLI `ask.py`. Имена `LocalGenerator`, `Assistant`, `Answer`, `REFUSAL` назови точно.
 
 ```bash
 uv run hf download bartowski/Qwen3-4B-Instruct-2507-GGUF \
   Qwen3-4B-Instruct-2507-Q4_K_M.gguf --local-dir models
 ```
 
-Главный класс ассистента с отказом:
+**Критерий шага** (self-check — требует скачанной GGUF-модели, авто-проверки нет):
 
-```python
-# rag/assistant.py
-from dataclasses import dataclass
-from rag.retriever import Retriever
-from rag.prompt import build_prompt
+- [ ] `ask.py "какой максимальный вывод в сутки у верифицированного игрока?"` возвращает «300000 рублей» со ссылкой `[1]`;
+- [ ] в выводе печатается источник `payouts-limits.md`;
+- [ ] на вопрос вне базы ("какая погода завтра") приходит `REFUSAL`, а LLM **не вызывается** (защита №1 — отказ до генерации);
+- [ ] ответ без единой `[` помечается предупреждением `[!]` (защита №2);
+- [ ] `temperature=0.1` (а не 0.7) — ответы фактические, без «креатива»;
+- [ ] при работе локального генератора ни один токен корпуса не уходит в сеть.
 
-REFUSAL = ("В доступной документации нет информации по этому вопросу. "
-           "Уточни запрос или обратись к ответственному за раздел.")
+??? success "Решение"
 
-@dataclass
-class Answer:
-    text: str
-    sources: list[str]
-    refused: bool
+    ```python
+    # rag/generator.py
+    from llama_cpp import Llama
+    from rag.prompt import SYSTEM
 
-class Assistant:
-    def __init__(self, retriever: Retriever, generator):
-        self.retriever, self.generator = retriever, generator
+    class LocalGenerator:
+        """Локальная LLM через llama.cpp — данные не покидают машину."""
+        def __init__(self, model_path: str, n_ctx: int = 4096):
+            self.llm = Llama(model_path=model_path, n_ctx=n_ctx, verbose=False)
 
-    def ask(self, question: str) -> Answer:
-        hits = self.retriever.retrieve(question)
-        if not hits:                                  # защита №1: нет контекста
-            return Answer(REFUSAL, [], refused=True)
-        prompt, sources = build_prompt(question, hits)
-        text = self.generator.generate(prompt)
-        # защита №2: ответ без единой ссылки — подозрителен, помечаем
-        if "[" not in text:
-            text += "\n\n[!] Ответ без явных ссылок — проверь по источникам ниже."
-        used = sorted(set(sources))
-        return Answer(text, used, refused=False)
-```
+        def generate(self, user_prompt: str) -> str:
+            out = self.llm.create_chat_completion(
+                messages=[{"role": "system", "content": SYSTEM},
+                          {"role": "user", "content": user_prompt}],
+                temperature=0.1, max_tokens=400)
+            return out["choices"][0]["message"]["content"].strip()
+    ```
 
-CLI-обёртка:
+    ```python
+    # rag/assistant.py
+    from dataclasses import dataclass
+    from rag.retriever import Retriever
+    from rag.prompt import build_prompt
 
-```python
-# ask.py
-import sys
-from rag.embedder import Embedder
-from rag.store import VectorStore
-from rag.retriever import Retriever
-from rag.generator import LocalGenerator
-from rag.assistant import Assistant
+    REFUSAL = ("В доступной документации нет информации по этому вопросу. "
+               "Уточни запрос или обратись к ответственному за раздел.")
 
-def main():
-    question = " ".join(sys.argv[1:]) or input("Вопрос: ")
-    store = VectorStore.load()
-    retriever = Retriever(store, Embedder(), k=4, min_score=0.80)
-    gen = LocalGenerator("models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
-    answer = Assistant(retriever, gen).ask(question)
-    print("\n" + answer.text)
-    if answer.sources:
-        print("\nИсточники:", ", ".join(answer.sources))
+    @dataclass
+    class Answer:
+        text: str
+        sources: list[str]
+        refused: bool
 
-if __name__ == "__main__":
-    main()
-```
+    class Assistant:
+        def __init__(self, retriever: Retriever, generator):
+            self.retriever, self.generator = retriever, generator
 
-```bash
-uv run python ask.py "какой максимальный вывод в сутки у верифицированного игрока?"
-```
+        def ask(self, question: str) -> Answer:
+            hits = self.retriever.retrieve(question)
+            if not hits:                                  # защита №1: нет контекста
+                return Answer(REFUSAL, [], refused=True)
+            prompt, sources = build_prompt(question, hits)
+            text = self.generator.generate(prompt)
+            # защита №2: ответ без единой ссылки — подозрителен, помечаем
+            if "[" not in text:
+                text += "\n\n[!] Ответ без явных ссылок — проверь по источникам ниже."
+            used = sorted(set(sources))
+            return Answer(text, used, refused=False)
+    ```
 
-**Что получилось.** Ассистент отвечает "300000 рублей в сутки [1]" и печатает источник `payouts-limits.md`. На вопрос вне базы — корректный отказ без выдумывания. Данные не уходят в облако.
+    ```python
+    # ask.py
+    import sys
+    from rag.embedder import Embedder
+    from rag.store import VectorStore
+    from rag.retriever import Retriever
+    from rag.generator import LocalGenerator
+    from rag.assistant import Assistant
+
+    def main():
+        question = " ".join(sys.argv[1:]) or input("Вопрос: ")
+        store = VectorStore.load()
+        retriever = Retriever(store, Embedder(), k=4, min_score=0.80)
+        gen = LocalGenerator("models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
+        answer = Assistant(retriever, gen).ask(question)
+        print("\n" + answer.text)
+        if answer.sources:
+            print("\nИсточники:", ", ".join(answer.sources))
+
+    if __name__ == "__main__":
+        main()
+    ```
+
+    ```bash
+    uv run python ask.py "какой максимальный вывод в сутки у верифицированного игрока?"
+    ```
+
+    **Почему так.** Ассистент отвечает "300000 рублей в сутки [1]" и печатает источник `payouts-limits.md`. На вопрос вне базы — корректный отказ без выдумывания. Данные не уходят в облако. Ключевой приём: отказ реализован в коде (детерминированно), а не доверен модели.
 
 !!! example "Fallback на облачный API, если локально не тянет"
 
@@ -561,15 +694,21 @@ uv run python ask.py "какой максимальный вывод в сутк
 
     Замена в `ask.py` — одна строка (`gen = CloudGenerator()`), весь конвейер выше работает без изменений. Это и есть выгода от изоляции генератора за интерфейсом.
 
-!!! question "Проверь себя"
+Проверь понимание:
 
-    1. Почему отказ при пустом retrieval реализован ДО вызова LLM, а не просьбой к модели "скажи если не знаешь"?
-    2. Зачем температура 0.1, а не 0.7?
-
-??? success "Ответы"
-
-    1. Если контекст пуст и мы всё равно зовём LLM, она ответит из своих параметрических знаний (общих знаний про гемблинг), а не из нашей базы — и это будет звучать уверенно, но окажется неверным для конкретной компании. Отказ в коде гарантирован детерминированно, инструкция в промпте — лишь вероятностна.
-    2. Нам нужны фактические ответы по документации, а не креатив. Низкая температура снижает разброс и склонность додумывать. Высокая уместна для генерации идей, но не для справочного ассистента.
+```text
+Q: Почему отказ при пустом retrieval реализован ДО вызова LLM, а не просьбой к модели "скажи если не знаешь"?
+[ ] Так быстрее по токенам, на качество ответа это не влияет
+[x] При пустом контексте LLM ответит из своих параметрических знаний - уверенно, но неверно для конкретной компании; отказ в коде гарантирован детерминированно, инструкция в промпте лишь вероятностна
+[ ] Модель технически не способна отказаться сама
+> Общие знания про гемблинг у модели есть, и она охотно их выдаст за факты твоей компании. Детерминированный отказ по пустому retrieval надёжнее любой инструкции в промпте.
+---
+Q: Зачем температура 0.1, а не 0.7?
+[ ] 0.1 ускоряет генерацию
+[x] Нужны фактические ответы по документации, а не креатив; низкая температура снижает разброс и склонность додумывать
+[ ] При 0.7 llama.cpp игнорирует системный промпт
+> Высокая температура уместна для генерации идей, но для справочного ассистента она повышает риск выдумок. Факты - значит низкий разброс.
+```
 
 ### Шаг 8: Мини-evals — измеряем качество
 
@@ -580,68 +719,86 @@ uv run python ask.py "какой максимальный вывод в сутк
 
 Раздельность важна: если падает Recall@k — чини чанкинг/эмбеддинги/порог; если retrieval хороший, а ответ плохой — чини промпт/модель.
 
-```python
-# eval.py
-from rag.embedder import Embedder
-from rag.store import VectorStore
-from rag.retriever import Retriever
+**Задача.** Создай `eval.py`. Опиши `EVAL_SET` — список пар (вопрос, эталонный файл-источник), сформулированных **другими словами**, чем в документах (иначе мерим лексику, а не смысл). Напиши `evaluate(k=4, min_score=0.0)`: по каждому вопросу делай `retrieve`, проверяй, попал ли `gold`-источник в найденные, считай Hit Rate@k (доля попаданий) и MRR@k (средний reciprocal rank). Промахи печатай с деталями. Обрати внимание: в eval `min_score=0.0` (мерим чистую ранжировку), в бою — 0.80 (порог как триггер отказа).
 
-# Эталон: вопрос -> файл, который ДОЛЖЕН быть найден.
-EVAL_SET = [
-    ("минимальная сумма вывода", "payouts-limits.md"),
-    ("максимальный вывод в сутки для верифицированного игрока", "payouts-limits.md"),
-    ("когда обязательна верификация KYC", "kyc-process.md"),
-    ("какой вейджер у приветственного бонуса", "bonus-wager.md"),
-    ("как определяется мультиаккаунт", "antifraud-rules.md"),
-    ("за какое время отвечает поддержка ночью", "support-sla.md"),
-    ("как установить лимит депозита", "responsible-gaming.md"),
-    ("какие методы вывода доступны", "payout-methods.md"),
-    ("какие документы принимаются для верификации", "kyc-documents.md"),
-    ("на сколько можно сделать самоисключение", "responsible-gaming.md"),
-]
+**Критерий шага** (self-check — требует индекса и эмбеддингов, авто-проверки нет):
 
-def evaluate(k: int = 4, min_score: float = 0.0):
-    store = VectorStore.load()
-    retriever = Retriever(store, Embedder(), k=k, min_score=min_score)
-    hits_at_k, reciprocal_ranks = 0, []
-    for question, gold in EVAL_SET:
-        results = retriever.retrieve(question)
-        found_sources = [r.chunk.source for r in results]
-        if gold in found_sources:
-            hits_at_k += 1
-            rank = found_sources.index(gold) + 1
-            reciprocal_ranks.append(1 / rank)
-        else:
-            reciprocal_ranks.append(0.0)
-            print(f"  ПРОМАХ: '{question}' -> ожидался {gold}, "
-                  f"получено {found_sources}")
-    n = len(EVAL_SET)
-    print(f"\nHit Rate@{k}: {hits_at_k}/{n} = {hits_at_k / n:.2f}")
-    print(f"MRR@{k}:      {sum(reciprocal_ranks) / n:.3f}")
+- [ ] `eval.py` печатает Hit Rate@4 и MRR@4 по `EVAL_SET`;
+- [ ] на синтетическом корпусе с e5-base Hit Rate@4 в диапазоне 0.9-1.0;
+- [ ] каждый промах печатается с вопросом, ожидаемым и фактически найденными источниками;
+- [ ] вопросы в `EVAL_SET` сформулированы не теми же словами, что тела документов;
+- [ ] прогон `eval.py` стоит `min_score=0.0`, а боевой `ask.py` — `min_score=0.80` (разные задачи: измерение vs защита).
 
-if __name__ == "__main__":
-    evaluate(k=4, min_score=0.0)
-```
+??? success "Решение"
 
-```bash
-uv run python eval.py
-```
+    ```python
+    # eval.py
+    from rag.embedder import Embedder
+    from rag.store import VectorStore
+    from rag.retriever import Retriever
 
-**Что получилось.** Скрипт печатает Hit Rate@4 (доля вопросов, где нужный файл попал в top-4) и MRR (насколько высоко он стоял). На синтетическом корпусе с e5-base ожидаемо 0.9-1.0. Каждый промах печатается с деталями — это твой to-do по улучшению retrieval.
+    # Эталон: вопрос -> файл, который ДОЛЖЕН быть найден.
+    EVAL_SET = [
+        ("минимальная сумма вывода", "payouts-limits.md"),
+        ("максимальный вывод в сутки для верифицированного игрока", "payouts-limits.md"),
+        ("когда обязательна верификация KYC", "kyc-process.md"),
+        ("какой вейджер у приветственного бонуса", "bonus-wager.md"),
+        ("как определяется мультиаккаунт", "antifraud-rules.md"),
+        ("за какое время отвечает поддержка ночью", "support-sla.md"),
+        ("как установить лимит депозита", "responsible-gaming.md"),
+        ("какие методы вывода доступны", "payout-methods.md"),
+        ("какие документы принимаются для верификации", "kyc-documents.md"),
+        ("на сколько можно сделать самоисключение", "responsible-gaming.md"),
+    ]
+
+    def evaluate(k: int = 4, min_score: float = 0.0):
+        store = VectorStore.load()
+        retriever = Retriever(store, Embedder(), k=k, min_score=min_score)
+        hits_at_k, reciprocal_ranks = 0, []
+        for question, gold in EVAL_SET:
+            results = retriever.retrieve(question)
+            found_sources = [r.chunk.source for r in results]
+            if gold in found_sources:
+                hits_at_k += 1
+                rank = found_sources.index(gold) + 1
+                reciprocal_ranks.append(1 / rank)
+            else:
+                reciprocal_ranks.append(0.0)
+                print(f"  ПРОМАХ: '{question}' -> ожидался {gold}, "
+                      f"получено {found_sources}")
+        n = len(EVAL_SET)
+        print(f"\nHit Rate@{k}: {hits_at_k}/{n} = {hits_at_k / n:.2f}")
+        print(f"MRR@{k}:      {sum(reciprocal_ranks) / n:.3f}")
+
+    if __name__ == "__main__":
+        evaluate(k=4, min_score=0.0)
+    ```
+
+    ```bash
+    uv run python eval.py
+    ```
+
+    **Почему так.** Скрипт печатает Hit Rate@4 (доля вопросов, где нужный файл попал в top-4) и MRR (насколько высоко он стоял). На синтетическом корпусе с e5-base ожидаемо 0.9-1.0. Каждый промах печатается с деталями — это твой to-do по улучшению retrieval. Вопросы намеренно сформулированы иначе, чем тела доков, — иначе метрика мерила бы совпадение слов, а не смысла, и была бы завышена.
 
 !!! tip "Как использовать eval по-инженерному"
 
     Меняешь один параметр (размер чанка, k, модель эмбеддингов, порог) — прогоняешь `eval.py` — смотришь на дельту метрики. Так выбор гиперпараметров превращается из гадания в измеримый эксперимент. Заведи привычку: ни одно изменение retrieval не уходит в работу без прогона eval. Это roadmap к продакшен-качеству.
 
-!!! question "Проверь себя"
+Проверь понимание:
 
-    1. Почему в `eval.py` стоит `min_score=0.0`, а в боевом ассистенте — 0.80?
-    2. Что покажет высокий Hit Rate, но плохие ответы пользователю?
-
-??? success "Ответы"
-
-    1. В eval мы измеряем чистую способность поиска ранжировать — порог тут только мешал бы и скрывал промахи. В бою порог нужен как триггер отказа. Это разные задачи: измерение vs защита.
-    2. Что retrieval здоров, а проблема ниже по конвейеру — в промпте или генераторе (модель плохо следует инструкции цитировать, слишком слабая, или контекст подан криво). Раздельные метрики сразу указывают, где копать, и экономят часы.
+```text
+Q: Почему в eval.py стоит min_score=0.0, а в боевом ассистенте - 0.80?
+[ ] Это опечатка, пороги должны совпадать
+[x] В eval мы измеряем чистую способность поиска ранжировать - порог скрывал бы промахи; в бою порог нужен как триггер отказа. Это разные задачи: измерение vs защита
+[ ] 0.0 ускоряет прогон eval
+> Порог в измерении мешал бы видеть, насколько хорошо ранжируется поиск. В бою тот же порог - предохранитель, отсекающий "ответы из ниоткуда".
+---
+Q: Что означает высокий Hit Rate, но плохие ответы пользователю?
+[ ] Что нужно увеличить k
+[x] Что retrieval здоров, а проблема ниже по конвейеру - в промпте или генераторе; раздельные метрики сразу указывают, где копать
+[ ] Что эмбеддинг-модель не под язык корпуса
+> Раздельные метрики экономят часы: высокий Hit Rate снимает подозрение с поиска и направляет тебя чинить промпт/модель, а не чанкинг.
+```
 
 ## Типичные ошибки
 
@@ -662,7 +819,8 @@ uv run python eval.py
 
 ## Критерий готовности
 
-- [ ] `generate_corpus.py` создаёт папку `corpus/` с markdown-доками и фронтматтером
+- [ ] `generate_corpus.py` создаёт папку `corpus/` с 11 markdown-доками и фронтматтером
+- [ ] `load_corpus` и `chunk_corpus` проходят авто-`assert` (11 документов, 11 чанков, source на каждом чанке)
 - [ ] `build_index.py` строит и сохраняет FAISS-индекс в `store/`
 - [ ] `ask.py` отвечает на вопрос по базе и печатает источник(и)
 - [ ] На вопрос вне базы ассистент корректно отказывает, а не выдумывает
@@ -694,3 +852,5 @@ Hit Rate@4 и MRR — это твой внутренний инженерный 
 ## Что ты закрепил
 
 Ты собрал полный production-образный RAG-конвейер от корпуса до измеримого качества и связал воедино несколько слоёв навыков: работу с LLM и эмбеддингами (M20), инженерную дисциплину разбиения данных и метрик, и продуктовое мышление про приватность и доверие к ответам. Главные переносимые идеи: retrieval-качество важнее выбора генератора и его надо измерять раздельной метрикой; защита от галлюцинаций строится детерминированным кодом (отказ по пустому контексту, программная проверка цитат), а не уговорами модели; а приватность чувствительных данных решается изоляцией генератора за интерфейсом и локальным инференсом. Этот конвейер — переиспользуемый каркас: меняешь папку `corpus/` и eval-набор, и тот же код обслуживает любую внутреннюю базу знаний.
+</content>
+</invoke>

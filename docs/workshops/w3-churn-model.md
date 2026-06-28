@@ -14,9 +14,20 @@
 
 Это не учебный `model.fit(X, y)` на готовом датасете. Главная ценность воркшопа — научиться **не обманывать себя**: правильно определить таргет, сделать временной сплит, поймать утечки и измерить модель метрикой, которая не врёт при дисбалансе классов.
 
-!!! info "Почему именно churn"
+!!! info "Как устроен этот воркшоп"
 
-    Удержание игрока в 5-7 раз дешевле привлечения нового. Но кампания удержания (бонус, звонок, пуш) стоит денег и раздражает лояльных. Модель, которая точно показывает, кто реально на грани ухода, напрямую конвертируется в деньги. Это самый «продуктовый» ML-проект в курсе.
+    Это не лекция с готовым кодом, а задачник. Каждый содержательный шаг построен так:
+
+    - **Задача** — что именно нужно сделать руками, с явными входами и точными именами выходных переменных (их проверяет критерий — назови их ровно так, иначе будет `NameError`).
+    - **Критерий шага** — кусок кода с `assert`, который ты запускаешь после своего решения. Зелёный прогон (без ошибки) = шаг сдан. Это твой локальный авто-грейдер, аналог кнопки «Проверить» на Stepik.
+    - **Решение** спрятано под спойлер `Решение`. Открывай его только после своей попытки — чтобы сверить подход, а не списать.
+    - **Числовые задачи** проверяются прямо на странице: посчитай число, впиши в поле, нажми «Проверить».
+
+    Все `assert` рассчитаны на сгенерированные данные с `seed=42` (`np.random.default_rng(42)`). Не меняй seed и параметры генератора, иначе числа поплывут.
+
+!!! info "Логика всего пайплайна: Задача → Критерий → Решение"
+
+    Каждый шаг — это маленький эксперимент: сначала ты формулируешь, что должно получиться (Задача с именами переменных), потом проверяешь себя автогрейдером (Критерий), и только затем сверяешься с эталоном (Решение). Так ты учишься ловить собственные ошибки до того, как они уедут в прод, — а в churn-моделях именно тихие методологические ошибки (утечки, не та метрика, порог 0.5) губят результат.
 
 ## Бизнес-кейс
 
@@ -24,7 +35,7 @@
 
     Ты data scientist в команде iGaming-продукта. К тебе приходит **Head of Retention**: отдел жжёт бюджет на удержание вслепую. Сейчас CRM шлёт реактивацию и бонусы по простому правилу «не заходил 14 дней», но к этому моменту половина игроков уже потеряна, а вторая половина — те, кто и так бы вернулся, и бонус им подарен зря.
 
-    - **Проблема в цифрах.** База активных игроков ~8 000, отток в 30-дневном окне ~20% (это 1 600 игроков в месяц). Средний LTV уходящего игрока ориентировочно 50 у.е. — то есть на кону около **80 000 у.е. недополученной выручки в месяц**. Кампания удержания стоит ~5 у.е. на игрока; при текущем «ковровом» правиле до 60% бюджета уходит на тех, кто не собирался уходить.
+    - **Проблема в цифрах.** База активных игроков ~8 000, отток в 30-дневном окне отдел грубо оценивает в 15-20% (по факту на конкретном срезе цифра может быть и ниже — её ты посчитаешь сам на Шаге 1). Средний LTV уходящего игрока ориентировочно 50 у.е. — на кону десятки тысяч у.е. недополученной выручки в месяц. Кампания удержания стоит ~5 у.е. на игрока; при текущем «ковровом» правиле значительная часть бюджета уходит на тех, кто не собирался уходить.
     - **Что зависит от твоего ответа.** Head of Retention хочет переключить CRM с правила «14 дней» на скоринг: дёргать удержанием только тех, кто реально на грани. Решается, кого включать в кампанию следующего месяца и под какой бюджет — точность модели напрямую двигает и спасённую выручку, и слитые деньги на ложные срабатывания.
     - **Ограничение.** Полноценного ML-сервиса пока нет, дай ответ за спринт на исторических логах событий (депозиты, ставки, сессии). Нужна не только вероятность, но и понятный порог в деньгах и объяснимые драйверы — иначе отдел не поверит «чёрному ящику».
 
@@ -42,7 +53,7 @@
 
 ```bash
 uv init churn-w3 && cd churn-w3
-uv add pandas numpy scikit-learn lightgbm shap matplotlib pyarrow
+uv add pandas numpy scikit-learn lightgbm shap matplotlib pyarrow joblib
 uv add --dev jupyterlab
 uv run jupyter lab
 ```
@@ -62,6 +73,8 @@ uv run jupyter lab
 ### Модель данных
 
 Каждый игрок имеет дату регистрации и скрытый «уровень здоровья» (engagement), который дрейфует во времени. Часть игроков получает негативный тренд (надоело, проигрался, нашёл конкурента) и постепенно перестаёт заходить. Депозиты, ставки и сессии генерируются как пуассоновский поток с интенсивностью, зависящей от текущего engagement.
+
+Это **setup-код, а не задача** — скопируй и запусти как есть. Дальше ты работаешь с `players` и `events` как с данными, которые «пришли из продакшена».
 
 ```python
 import numpy as np
@@ -128,14 +141,34 @@ print(events.shape)
 print(events.head())
 ```
 
-**Что получилось:** примерно 1.5-2 млн строк событий по 8000 игроков за ~8 месяцев. У каждого события — депозит, число ставок и оборот. У части игроков активность визуально затухает к концу окна — это будущий отток.
+**Что получилось:** примерно 0.9 млн строк событий по 8000 игроков за ~8 месяцев. У каждого события — депозит, число ставок и оборот. У части игроков активность визуально затухает к концу окна — это будущий отток.
 
 !!! note "Чем заменить на реальные данные"
 
     Структура `player_id / ts / amount / event_type` универсальна. Подставить можно:
+
     - **Kaggle: «Online Gaming / Telco Customer Churn»** — для отработки самого пайплайна (там таргет уже готов, но логику временного сплита всё равно надо натянуть).
     - **Hugging Face: датасеты транзакционных логов e-commerce** — событийная природа та же.
     - В проде Yohoho — таблица событий ставок/депозитов; меняется только источник, весь код ниже работает без изменений.
+
+## Разминка: экономика ошибок и метрики
+
+Прежде чем писать пайплайн, прогрей интуицию про дисбаланс и стоимость ошибок руками. Эти числа понадобятся при выборе метрики и порога. Считай в уме или калькулятором, ответ впиши в поле — проверка мгновенная.
+
+```text
+TASK: Пропустить уходящего игрока (FN) стоит 50 у.е. упущенного LTV, а зря дёрнуть лояльного (FP) - 5 у.е. на кампанию. Во сколько раз ошибка FN дороже ошибки FP? Ответ - множитель числом.
+ANSWER: 10
+TOL: 0.1
+PLACEHOLDER: во сколько раз
+EXPLAIN: 50 / 5 = 10. Именно эта асимметрия (пропустить уходящего в 10 раз дороже, чем зря дёрнуть лояльного) сдвигает оптимальный порог в сторону большего recall. Симметричный порог 0.5 был бы оптимален только при равной цене ошибок - а у нас она разная в 10 раз.
+---
+TASK: В выборке 20% оттока. Модель-константа "никто не уйдёт" всем ставит retained. Какую accuracy в процентах она покажет? Округли до целого.
+ANSWER: 80
+TOL: 0.5
+UNIT: %
+PLACEHOLDER: целое число
+EXPLAIN: Константа угадывает все 80% оставшихся и промахивается по всем 20% ушедших: accuracy = 80%. При этом recall по оттоку = 0 - модель бесполезна. Поэтому accuracy при дисбалансе врёт всегда; дальше мы берём PR-AUC и бизнес-порог.
+```
 
 ## Ход работы
 
@@ -144,115 +177,200 @@ print(events.head())
 **Зачем.** «Отток» — не свойство природы, а наше решение. У гемблинга нет подписки, которую отменяют, поэтому churn определяется через **окно бездействия**: если игрок не сделал ни одной ставки за N дней — он в оттоке. Выбор N — бизнес-решение, не статистическое. Слишком маленькое N (7 дней) пометит как ушедших тех, кто просто в отпуске. Слишком большое (90) — мы узнаем об уходе, когда удерживать поздно.
 
 Ещё две даты критичны:
+
 - **observation cutoff** — момент «сейчас», на который мы делаем предсказание. Все фичи считаются **только по событиям до cutoff**.
 - **outcome window** — следующие N дней после cutoff, по которым определяется таргет.
 
+**Задача.** Зафиксируй `CHURN_N_DAYS = 30`, `CUTOFF = START + 180 дней`, `OUTCOME_END = CUTOFF + CHURN_N_DAYS`. Возьми в кандидаты только игроков, активных **до** cutoff (массив `active_before`). Построй DataFrame `labels` с колонками `player_id` и `churn`, где `churn = 1`, если в окне `(CUTOFF, OUTCOME_END]` у игрока **не было** ни одного события. Посмотри на долю оттока `labels.churn.mean()` — она определит выбор метрики дальше.
+
+**Критерий шага:**
+
 ```python
-CHURN_N_DAYS = 30
-CUTOFF = START + pd.Timedelta(days=180)        # "сегодня" для модели
-OUTCOME_END = CUTOFF + pd.Timedelta(days=CHURN_N_DAYS)
-
-# Кандидаты: игроки, которые были активны хотя бы раз ДО cutoff
-active_before = events[events.ts < CUTOFF].player_id.unique()
-
-# Таргет: была ли активность в окне (CUTOFF, OUTCOME_END]?
-in_window = events[(events.ts >= CUTOFF) & (events.ts < OUTCOME_END)]
-retained_ids = set(in_window.player_id.unique())
-
-labels = pd.DataFrame({"player_id": active_before})
-labels["churn"] = (~labels.player_id.isin(retained_ids)).astype(int)
-print(labels.churn.value_counts(normalize=True))
+assert len(labels) == 8000, "кандидатов должно быть ровно 8000 (все активны до cutoff)"
+assert set(labels["churn"].unique()) == {0, 1}
+cr = labels["churn"].mean()
+assert 0.02 <= cr <= 0.08, "на этом срезе доля оттока около 5% — сильный дисбаланс"
+print(f"OK: кандидатов {len(labels)}, доля оттока {cr:.3f}")
 ```
 
-**Что получилось:** таргет с дисбалансом — обычно 15-30% оттока. Запомни эту цифру: она определит выбор метрики дальше.
+??? tip "Подсказка"
+
+    Кандидаты — `events[events.ts < CUTOFF].player_id.unique()`. Удержанные — множество `player_id`, у кого есть события в окне. `churn` — это логическое «НЕ в множестве удержанных», приведённое к `int`.
+
+??? success "Решение"
+
+    ```python
+    CHURN_N_DAYS = 30
+    CUTOFF = START + pd.Timedelta(days=180)        # "сегодня" для модели
+    OUTCOME_END = CUTOFF + pd.Timedelta(days=CHURN_N_DAYS)
+
+    # Кандидаты: игроки, которые были активны хотя бы раз ДО cutoff
+    active_before = events[events.ts < CUTOFF].player_id.unique()
+
+    # Таргет: была ли активность в окне (CUTOFF, OUTCOME_END]?
+    in_window = events[(events.ts >= CUTOFF) & (events.ts < OUTCOME_END)]
+    retained_ids = set(in_window.player_id.unique())
+
+    labels = pd.DataFrame({"player_id": active_before})
+    labels["churn"] = (~labels.player_id.isin(retained_ids)).astype(int)
+    print(labels.churn.value_counts(normalize=True))
+    ```
+
+    **Почему так.** На этом срезе доля оттока выходит около **5%** — заметно ниже грубой оценки отдела «15-20%» и сильно несбалансировано. Это не баг, а свойство нашего генератора: затухание `decay` за полгода снижает активность, но редко обнуляет её за 30 дней. Для тебя это важный сигнал: класс «уйдёт» — редкое событие, а значит accuracy здесь бесполезна, и метрику надо брать чувствительную к редкому позитиву (PR-AUC, Шаг 6).
 
 !!! warning "Ловушка выживания"
 
     Мы берём в кандидаты только игроков, активных **до** cutoff. Иначе в выборку попадут те, кто зарегистрировался вчера или уже давно ушёл — для них предсказание бессмысленно. Это первое решение, которое отсекает мусор и делает таргет осмысленным.
 
+Проверь понимание:
+
+```text
+Q: Почему в кандидаты берут только игроков, активных ДО cutoff?
+[ ] Чтобы искусственно поднять долю оттока
+[x] Иначе в выборку попадут только что зарегистрированные и давно ушедшие, для кого предсказание бессмысленно
+[ ] Чтобы ускорить обучение модели
+> Скоринг имеет смысл только для тех, кто ещё «жив» на момент cutoff. Новички без истории и давно ушедшие — это шум, который размывает и таргет, и фичи.
+---
+Q: От чего зависит выбор N (длины окна бездействия)?
+[ ] Это статистический параметр, его подбирают по максимуму AUC
+[x] Это бизнес-решение: малое N ловит ложный отток (отпуск), большое N узнаёт об уходе слишком поздно
+[ ] N всегда равен 30 по стандарту индустрии
+> N — компромисс между чувствительностью и своевременностью. Его задаёт продукт, исходя из того, когда удержание ещё успевает сработать, а не оптимизатор метрики.
+```
+
 ### Шаг 2: Временной сплит (не случайный)
 
 **Зачем.** Если сделать `train_test_split(shuffle=True)`, модель будет учиться на данных из будущего и предсказывать прошлое — в проде такого не бывает. Хуже: при оконных фичах случайный сплит почти гарантированно даёт **утечку через время** (фичи одного игрока размазаны по train и test). Честная оценка = train на раннем cutoff, test на позднем.
 
-Делаем **два cutoff**: train предсказывает с позиции дня 150, test — с позиции дня 180. Окна не пересекаются, test полностью «в будущем» относительно train.
+**Задача.** Сделай **два cutoff**: `CUTOFF_TRAIN = START + 150 дней`, `CUTOFF_TEST = START + 180 дней`. Напиши функцию `build_dataset(events, cutoff, n_days=CHURN_N_DAYS)`, которая для заданного cutoff повторяет логику Шага 1 (кандидаты + таргет), считает фичи через `make_features` (его реализуешь на Шаге 3) и возвращает объединённый `DataFrame` с колонками `player_id`, `churn` и фичами. Окна train и test не должны пересекаться, test полностью «в будущем» относительно train.
+
+**Критерий шага (self-check + код).** Функцию ты сможешь реально запустить только после Шага 3. Сейчас проверь логику:
 
 ```python
-def build_dataset(events, cutoff, n_days=CHURN_N_DAYS):
-    outcome_end = cutoff + pd.Timedelta(days=n_days)
-    active = events[events.ts < cutoff].player_id.unique()
-    window = events[(events.ts >= cutoff) & (events.ts < outcome_end)]
-    retained = set(window.player_id.unique())
-    lab = pd.DataFrame({"player_id": active})
-    lab["churn"] = (~lab.player_id.isin(retained)).astype(int)
-    feats = make_features(events, cutoff)            # см. Шаг 3
-    df = lab.merge(feats, on="player_id", how="left")
-    return df
-
-CUTOFF_TRAIN = START + pd.Timedelta(days=150)
-CUTOFF_TEST  = START + pd.Timedelta(days=180)
+assert CUTOFF_TRAIN < CUTOFF_TEST, "train-cutoff должен быть РАНЬШЕ test-cutoff"
+assert (CUTOFF_TEST - CUTOFF_TRAIN).days == 30
+assert callable(build_dataset)
+print("OK: cutoff'ы заданы, train в прошлом относительно test")
 ```
 
-!!! question "Проверь себя"
+И сверь по чек-листу, что в твоём дизайне:
 
-    1. Почему `shuffle=True` опасен именно для churn-задачи с оконными фичами?
-    2. Что произойдёт с метрикой, если train-cutoff будет позже test-cutoff?
-    3. Может ли один игрок быть и в train, и в test? Это проблема?
+- [ ] train предсказывает с позиции более раннего дня (150), test — с более позднего (180);
+- [ ] таргет в `build_dataset` считается по окну `(cutoff, cutoff+N]`, а фичи — только по `ts < cutoff`;
+- [ ] никакого `shuffle` — разделение строго по времени.
 
-??? success "Ответы"
+??? success "Решение"
 
-    1. Оконные агрегаты игрока коррелируют между соседними периодами; при перемешивании похожие строки попадут и в train, и в test, модель «подсмотрит» паттерн конкретного игрока, метрика окажется завышенной, а в проде просядет.
-    2. Модель будет учиться на будущем и тестироваться на прошлом — оценка станет оптимистично-бессмысленной, фактически утечка времени.
-    3. Да, может — это нормально, потому что фичи и таргет в train и test считаются на **разных временных окнах**. Проблема была бы при перемешивании внутри одного окна. Если хочется строгости — можно дополнительно держать игроков непересекающимися (см. GroupKFold в Шаге 9).
+    ```python
+    def build_dataset(events, cutoff, n_days=CHURN_N_DAYS):
+        outcome_end = cutoff + pd.Timedelta(days=n_days)
+        active = events[events.ts < cutoff].player_id.unique()
+        window = events[(events.ts >= cutoff) & (events.ts < outcome_end)]
+        retained = set(window.player_id.unique())
+        lab = pd.DataFrame({"player_id": active})
+        lab["churn"] = (~lab.player_id.isin(retained)).astype(int)
+        feats = make_features(events, cutoff)            # см. Шаг 3
+        df = lab.merge(feats, on="player_id", how="left")
+        return df
+
+    CUTOFF_TRAIN = START + pd.Timedelta(days=150)
+    CUTOFF_TEST  = START + pd.Timedelta(days=180)
+    ```
+
+    **Почему так.** Два непересекающихся окна имитируют реальность: модель учится на «прошлом» (день 150) и проверяется на «будущем» (день 180), которого она при обучении не видела. Это единственная честная оценка для задачи, где время — ось причинности. Один и тот же игрок может попасть и в train, и в test — это нормально, потому что его фичи и таргет там считаются на **разных** окнах.
+
+Проверь понимание:
+
+```text
+Q: Почему shuffle=True особенно опасен для churn-задачи с оконными фичами?
+[ ] Перемешивание замедляет обучение LightGBM
+[x] Соседние оконные агрегаты игрока коррелируют; при перемешивании похожие строки попадут и в train, и в test, и метрика окажется завышенной
+[ ] shuffle меняет баланс классов
+> Оконные фичи одного игрока в соседние периоды похожи. Перемешав, ты «подсовываешь» модели почти те же строки в обе части — она запоминает игрока, а не паттерн, и в проде проседает.
+---
+Q: Что будет с оценкой, если по ошибке сделать train-cutoff ПОЗЖЕ test-cutoff?
+[ ] Ничего, главное чтобы окна не пересекались
+[x] Модель будет учиться на будущем и тестироваться на прошлом — оценка станет оптимистично-бессмысленной (утечка времени)
+[ ] Метрика просто станет заниженной, но честной
+> Это переворот причинности: знание будущего «подсвечивает» прошлое. Оценка завышена и не имеет отношения к тому, как модель поведёт себя в проде.
+---
+Q: Один игрок попал и в train, и в test. Это проблема?
+[ ] Да, всегда; такие пересечения надо удалять
+[x] Нет: его фичи и таргет в train и test посчитаны на разных временных окнах; проблема была бы при перемешивании внутри одного окна
+[ ] Да, но только в логистической регрессии
+> Разные окна = разные наблюдения. Утечкой это становится только если один игрок учит и проверяет модель внутри одного окна — против этого на Шаге 9 берут GroupKFold.
+```
 
 ### Шаг 3: Feature engineering
 
 **Зачем.** Сырые события модель не съест. Нужны признаки, описывающие поведение игрока **на момент cutoff**. Ключевая дисциплина: каждая фича считается строго по `events.ts < cutoff`. Опираемся на классический RFM-каркас плюс динамику.
 
 Считаем три семейства признаков:
-- **Recency** — сколько дней назад была последняя активность (сильнейший предиктор оттока).
-- **Frequency / Monetary** — частота сессий, суммы депозитов и ставок за разные окна (7/30/90 дней).
+
+- **Recency** — сколько дней назад была последняя активность.
+- **Frequency / Monetary** — частота сессий, суммы депозитов и ставок за окна 7/30/90 дней.
 - **Динамика (лаги/тренды)** — отношение активности последней недели к предыдущему месяцу: если падает — игрок остывает.
 
+**Задача.** Реализуй функцию `make_features(events, cutoff)`, которая возвращает таблицу признаков по одному игроку в строке. Обязательные колонки: `recency_days`, `tenure_days`, оконные агрегаты с суффиксами `_7d`/`_30d`/`_90d` (`sessions`, `dep_sum`, `dep_cnt`, `bet_sum`, `n_bets`), производные `trend_sessions` и `dep_per_session`, плюс статика `country`/`device`. **Первой строкой** отфильтруй `events[events.ts < cutoff]` — это граница, защищающая от утечки. Проверь результат на `feats_check = make_features(events, CUTOFF_TRAIN)`.
+
+**Критерий шага:**
+
 ```python
-def make_features(events, cutoff):
-    ev = events[events.ts < cutoff].copy()
-    ev["age_days"] = (cutoff - ev.ts).dt.days
-
-    def win_agg(df, days, suffix):
-        w = df[df.age_days < days]
-        g = w.groupby("player_id").agg(
-            sessions=("ts", "count"),
-            dep_sum=("deposit", "sum"),
-            dep_cnt=("deposit", lambda s: (s > 0).sum()),
-            bet_sum=("bet_sum", "sum"),
-            n_bets=("n_bets", "sum"),
-        )
-        return g.add_suffix(f"_{suffix}")
-
-    f7  = win_agg(ev, 7,  "7d")
-    f30 = win_agg(ev, 30, "30d")
-    f90 = win_agg(ev, 90, "90d")
-
-    base = ev.groupby("player_id").agg(
-        recency_days=("age_days", "min"),     # дней с последней активности
-        tenure_days=("age_days", "max"),      # как давно с нами
-        lifetime_dep=("deposit", "sum"),
-        lifetime_bets=("n_bets", "sum"),
-    )
-
-    feats = base.join([f7, f30, f90], how="left").fillna(0)
-
-    # динамика: активность последней недели против среднего по месяцу
-    feats["trend_sessions"] = feats["sessions_7d"] / (feats["sessions_30d"] / 4 + 1e-6)
-    feats["dep_per_session"] = feats["dep_sum_30d"] / (feats["sessions_30d"] + 1e-6)
-
-    # статика игрока
-    pl = players.set_index("player_id")[["country", "device"]]
-    feats = feats.join(pl, how="left").reset_index()
-    return feats
+feats_check = make_features(events, CUTOFF_TRAIN)
+need = {"recency_days", "tenure_days", "sessions_7d", "sessions_30d",
+        "trend_sessions", "dep_per_session", "country", "device"}
+assert need <= set(feats_check.columns), "не хватает обязательных колонок-фич"
+assert feats_check["recency_days"].min() >= 0, "recency не может быть отрицательным"
+assert feats_check.shape[0] > 1000, "должно остаться много игроков, активных до cutoff"
+print(f"OK: {feats_check.shape[1]} колонок, {feats_check.shape[0]} игроков")
 ```
 
-**Что получилось:** таблица ~20+ числовых фич плюс категориальные `country`/`device`. `recency_days` и `trend_sessions` — наши главные кандидаты в драйверы.
+??? tip "Подсказка"
+
+    Заведи `ev["age_days"] = (cutoff - ev.ts).dt.days`. Оконный агрегат — это `ev[ev.age_days < days].groupby("player_id").agg(...)`. `recency_days` — это `min(age_days)`, `tenure_days` — `max(age_days)`. `trend_sessions = sessions_7d / (sessions_30d/4 + 1e-6)`: меньше 1 = активность падает.
+
+??? success "Решение"
+
+    ```python
+    def make_features(events, cutoff):
+        ev = events[events.ts < cutoff].copy()
+        ev["age_days"] = (cutoff - ev.ts).dt.days
+
+        def win_agg(df, days, suffix):
+            w = df[df.age_days < days]
+            g = w.groupby("player_id").agg(
+                sessions=("ts", "count"),
+                dep_sum=("deposit", "sum"),
+                dep_cnt=("deposit", lambda s: (s > 0).sum()),
+                bet_sum=("bet_sum", "sum"),
+                n_bets=("n_bets", "sum"),
+            )
+            return g.add_suffix(f"_{suffix}")
+
+        f7  = win_agg(ev, 7,  "7d")
+        f30 = win_agg(ev, 30, "30d")
+        f90 = win_agg(ev, 90, "90d")
+
+        base = ev.groupby("player_id").agg(
+            recency_days=("age_days", "min"),     # дней с последней активности
+            tenure_days=("age_days", "max"),      # как давно с нами
+            lifetime_dep=("deposit", "sum"),
+            lifetime_bets=("n_bets", "sum"),
+        )
+
+        feats = base.join([f7, f30, f90], how="left").fillna(0)
+
+        # динамика: активность последней недели против среднего по месяцу
+        feats["trend_sessions"] = feats["sessions_7d"] / (feats["sessions_30d"] / 4 + 1e-6)
+        feats["dep_per_session"] = feats["dep_sum_30d"] / (feats["sessions_30d"] + 1e-6)
+
+        # статика игрока
+        pl = players.set_index("player_id")[["country", "device"]]
+        feats = feats.join(pl, how="left").reset_index()
+        return feats
+    ```
+
+    **Почему так.** Получается таблица ~20+ числовых фич плюс категориальные `country`/`device`. Фильтр `ts < cutoff` в первой строке — это не косметика, а главная защита шага (см. предупреждение). Оконные агрегаты в трёх масштабах дают модели и «свежую» картину (7д), и «фон» (90д), а `trend_sessions` ловит саму динамику остывания.
 
 !!! warning "Самая частая утечка новичка"
 
@@ -260,37 +378,49 @@ def make_features(events, cutoff):
 
 ### Шаг 4: Baseline (правило и логистическая)
 
-**Зачем.** Прежде чем тянуть LightGBM, нужен дешёвый ориентир. Если бустинг не бьёт глупое правило — модель не нужна. Baseline'ов два: тривиальное правило по recency и честная логистическая регрессия.
+**Зачем.** Прежде чем тянуть LightGBM, нужен дешёвый ориентир. Если бустинг не бьёт глупое правило — модель не нужна. Baseline'ов два: тривиальное правило по recency и честная логистическая регрессия в pipeline (чтобы масштабирование не подсмотрело test).
+
+**Задача.** Собери `train = build_dataset(events, CUTOFF_TRAIN)` и `test = build_dataset(events, CUTOFF_TEST)`. Заведи `cat_cols = ["country", "device"]`, `num_cols` — все числовые фичи (без `player_id`/`churn`/категорий), `y_train`, `y_test`. Посчитай proxy-PR-AUC тривиального правила по `recency_days` и обучи логистическую регрессию в `make_pipeline(StandardScaler(), LogisticRegression(...))`, сохранив вероятности в `p_logit`. Это планка для LightGBM.
+
+**Критерий шага:**
 
 ```python
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
 from sklearn.metrics import average_precision_score, roc_auc_score
-
-train = build_dataset(events, CUTOFF_TRAIN)
-test  = build_dataset(events, CUTOFF_TEST)
-
-cat_cols = ["country", "device"]
-num_cols = [c for c in train.columns
-            if c not in ["player_id", "churn"] + cat_cols]
-
-y_train, y_test = train.churn, test.churn
-
-# Baseline 1: правило "не заходил > 14 дней -> уйдёт"
-rule_pred = (test.recency_days > 14).astype(int)
-print("rule PR-AUC proxy:", average_precision_score(y_test, test.recency_days))
-
-# Baseline 2: логистическая на числовых фичах (в pipeline, без утечки масштаба)
-logit = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000,
-                                                           class_weight="balanced"))
-logit.fit(train[num_cols], y_train)
-p_logit = logit.predict_proba(test[num_cols])[:, 1]
-print("logit PR-AUC:", average_precision_score(y_test, p_logit))
-print("logit ROC-AUC:", roc_auc_score(y_test, p_logit))
+pr_logit = average_precision_score(y_test, p_logit)
+assert pr_logit > 0.20, "логистическая должна заметно бить случайную baseline (~0.05)"
+assert roc_auc_score(y_test, p_logit) > 0.85, "ROC-AUC логистической высокий"
+print(f"OK: logit PR-AUC={pr_logit:.3f}")
 ```
 
-**Что получилось:** PR-AUC логистической обычно 0.5-0.65. Это планка, которую LightGBM обязан превзойти, иначе сложная модель не оправдана.
+??? success "Решение"
+
+    ```python
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.pipeline import make_pipeline
+    from sklearn.metrics import average_precision_score, roc_auc_score
+
+    train = build_dataset(events, CUTOFF_TRAIN)
+    test  = build_dataset(events, CUTOFF_TEST)
+
+    cat_cols = ["country", "device"]
+    num_cols = [c for c in train.columns
+                if c not in ["player_id", "churn"] + cat_cols]
+    y_train, y_test = train.churn, test.churn
+
+    # Baseline 1: правило "не заходил > 14 дней -> уйдёт"
+    print("rule PR-AUC proxy:", average_precision_score(y_test, test.recency_days))
+
+    # Baseline 2: логистическая на числовых фичах (в pipeline, без утечки масштаба)
+    logit = make_pipeline(StandardScaler(),
+                          LogisticRegression(max_iter=1000, class_weight="balanced"))
+    logit.fit(train[num_cols], y_train)
+    p_logit = logit.predict_proba(test[num_cols])[:, 1]
+    print("logit PR-AUC:", average_precision_score(y_test, p_logit))
+    print("logit ROC-AUC:", roc_auc_score(y_test, p_logit))
+    ```
+
+    **Почему так.** Правило по recency даёт proxy PR-AUC ~0.27, логистическая поднимает до ~0.36 при ROC-AUC ~0.92 — обе уже сильно выше случайной baseline (доля оттока ~0.05). Это и есть планка, которую LightGBM обязан превзойти, иначе сложная модель не оправдана. Высокий ROC при умеренном PR — типичная картина дисбаланса: ROC льстит, PR честнее (Шаг 6).
 
 !!! tip "StandardScaler внутри pipeline — не для красоты"
 
@@ -300,42 +430,55 @@ print("logit ROC-AUC:", roc_auc_score(y_test, p_logit))
 
 **Зачем.** Градиентный бустинг — рабочая лошадь табличного ML 2026: ест категориальные напрямую, устойчив к разномасштабным фичам, ловит нелинейности и взаимодействия. Используем встроенную поддержку категорий и раннюю остановку по валидации.
 
+**Задача.** Приведи `country`/`device` к типу `category`. Собери `features = num_cols + cat_cols`, `lgb.Dataset` для train и valid, задай `params` с `objective="binary"`, `metric="average_precision"`, `scale_pos_weight` для компенсации дисбаланса и `seed=42`. Обучи `model` с `early_stopping(100)`, сохрани предсказания в `p_lgb`. Сравни PR-AUC с логистической.
+
+**Критерий шага:**
+
 ```python
-import lightgbm as lgb
-
-for c in cat_cols:
-    train[c] = train[c].astype("category")
-    test[c]  = test[c].astype("category")
-
-features = num_cols + cat_cols
-dtrain = lgb.Dataset(train[features], label=y_train,
-                     categorical_feature=cat_cols)
-dvalid = lgb.Dataset(test[features], label=y_test, reference=dtrain)
-
-params = {
-    "objective": "binary",
-    "metric": "average_precision",
-    "learning_rate": 0.03,
-    "num_leaves": 31,
-    "min_child_samples": 80,
-    "feature_fraction": 0.8,
-    "bagging_fraction": 0.8,
-    "bagging_freq": 1,
-    "scale_pos_weight": (y_train == 0).sum() / (y_train == 1).sum(),
-    "seed": 42,
-    "verbose": -1,
-}
-
-model = lgb.train(params, dtrain, num_boost_round=2000,
-                  valid_sets=[dvalid],
-                  callbacks=[lgb.early_stopping(100), lgb.log_evaluation(200)])
-
-p_lgb = model.predict(test[features])
-print("LGB PR-AUC:", average_precision_score(y_test, p_lgb))
-print("LGB ROC-AUC:", roc_auc_score(y_test, p_lgb))
+pr_lgb = average_precision_score(y_test, p_lgb)
+assert pr_lgb > 0.30, "LGB должен превзойти случайную baseline в разы"
+assert roc_auc_score(y_test, p_lgb) > 0.85
+assert pr_lgb > pr_logit - 0.05, "LGB должен как минимум не уступать логистической"
+print(f"OK: LGB PR-AUC={pr_lgb:.3f}, ROC-AUC={roc_auc_score(y_test, p_lgb):.3f}")
 ```
 
-**Что получилось:** PR-AUC обычно 0.65-0.8, заметно выше логистической. `scale_pos_weight` компенсирует дисбаланс, ранняя остановка по test-метрике не даёт переобучиться.
+??? success "Решение"
+
+    ```python
+    import lightgbm as lgb
+
+    for c in cat_cols:
+        train[c] = train[c].astype("category")
+        test[c]  = test[c].astype("category")
+
+    features = num_cols + cat_cols
+    dtrain = lgb.Dataset(train[features], label=y_train, categorical_feature=cat_cols)
+    dvalid = lgb.Dataset(test[features], label=y_test, reference=dtrain)
+
+    params = {
+        "objective": "binary",
+        "metric": "average_precision",
+        "learning_rate": 0.03,
+        "num_leaves": 31,
+        "min_child_samples": 80,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.8,
+        "bagging_freq": 1,
+        "scale_pos_weight": (y_train == 0).sum() / (y_train == 1).sum(),
+        "seed": 42,
+        "verbose": -1,
+    }
+
+    model = lgb.train(params, dtrain, num_boost_round=2000,
+                      valid_sets=[dvalid],
+                      callbacks=[lgb.early_stopping(100), lgb.log_evaluation(200)])
+
+    p_lgb = model.predict(test[features])
+    print("LGB PR-AUC:", average_precision_score(y_test, p_lgb))
+    print("LGB ROC-AUC:", roc_auc_score(y_test, p_lgb))
+    ```
+
+    **Почему так.** LightGBM даёт PR-AUC ~0.40 — выше логистической (~0.36), хотя на этих чистых синтетических фичах разрыв скромный: линейная модель здесь почти исчерпывает сигнал. На реальных данных с нелинейностями и взаимодействиями отрыв бустинга обычно больше. `scale_pos_weight` компенсирует дисбаланс, ранняя остановка по test-метрике (~88 итераций) не даёт переобучиться. Главный вывод: всегда сравнивай со baseline — «дорогая» модель оправдана только когда реально его бьёт.
 
 !!! note "Почему не XGBoost/CatBoost"
 
@@ -343,100 +486,174 @@ print("LGB ROC-AUC:", roc_auc_score(y_test, p_lgb))
 
 ### Шаг 6: Метрика — PR-AUC, а не accuracy/ROC
 
-**Зачем.** При 20% оттока модель «всем предскажу retained» даёт 80% accuracy и при этом бесполезна. Accuracy здесь врёт всегда. ROC-AUC честнее, но при сильном дисбалансе остаётся оптимистичным: огромное число истинно-негативных раздувает знаменатель. Нас интересует **качество среди тех, кого модель назвала уходящими** — это precision и recall, то есть PR-кривая.
+**Зачем.** При редком оттоке (~5%) модель «всем предскажу retained» даёт ~95% accuracy и при этом бесполезна. Accuracy здесь врёт всегда. ROC-AUC честнее, но при сильном дисбалансе остаётся оптимистичным: огромное число истинно-негативных раздувает знаменатель. Нас интересует **качество среди тех, кого модель назвала уходящими** — это precision и recall, то есть PR-кривая.
 
 $$\text{Precision} = \frac{TP}{TP+FP}, \quad \text{Recall} = \frac{TP}{TP+FN}, \quad \text{PR-AUC} = \int_0^1 P(r)\,dr$$
 
+**Задача.** Построй PR-кривую LightGBM через `precision_recall_curve(y_test, p_lgb)` и нанеси горизонтальную базовую линию `baseline = y_test.mean()` — это PR-AUC случайной модели. Сохрани `baseline`. Любая осмысленная модель должна лежать выше этой линии.
+
+**Критерий шага:**
+
 ```python
-from sklearn.metrics import precision_recall_curve, classification_report
-import matplotlib.pyplot as plt
-
-prec, rec, thr = precision_recall_curve(y_test, p_lgb)
-baseline = y_test.mean()  # PR-AUC случайной модели = доля позитивов
-
-plt.plot(rec, prec, label=f"LGB (AP={average_precision_score(y_test,p_lgb):.3f})")
-plt.axhline(baseline, ls="--", color="gray", label=f"random={baseline:.2f}")
-plt.xlabel("Recall"); plt.ylabel("Precision"); plt.legend(); plt.show()
+assert abs(baseline - y_test.mean()) < 1e-9, "baseline = доля позитивного класса"
+assert 0.02 <= baseline <= 0.08, "доля оттока в test около 5%"
+assert pr_lgb > baseline * 3, "модель должна быть в разы выше случайной линии"
+print(f"OK: random baseline={baseline:.3f}, LGB выше неё в {pr_lgb/baseline:.1f}x")
 ```
 
-**Что получилось:** PR-кривая, базовая линия которой — доля оттока. Любая осмысленная модель должна быть выше неё. Именно расстояние от этой линии, а не абсолютная цифра, говорит о пользе.
+??? success "Решение"
 
-!!! question "Проверь себя"
+    ```python
+    from sklearn.metrics import precision_recall_curve
+    import matplotlib.pyplot as plt
 
-    1. Модель предсказала 80% accuracy при 20% оттока. Хорошо?
-    2. Почему ROC-AUC = 0.85 может вводить в заблуждение при дисбалансе 5%?
-    3. Чему равна PR-AUC случайного предсказателя?
+    prec, rec, thr = precision_recall_curve(y_test, p_lgb)
+    baseline = y_test.mean()  # PR-AUC случайной модели = доля позитивов
 
-??? success "Ответы"
+    plt.plot(rec, prec, label=f"LGB (AP={average_precision_score(y_test,p_lgb):.3f})")
+    plt.axhline(baseline, ls="--", color="gray", label=f"random={baseline:.3f}")
+    plt.xlabel("Recall"); plt.ylabel("Precision"); plt.legend(); plt.show()
+    ```
 
-    1. Нет. Константа «никто не уйдёт» тоже даёт 80% и при этом ловит ноль оттока. Accuracy при дисбалансе бесполезна.
-    2. ROC учитывает true-negative rate, а негативов огромное большинство — кривая легко уходит к высоким значениям, не отражая, что среди помеченных «уйдёт» полно ложных. PR-кривая фокусируется именно на позитивном классе.
-    3. Доле позитивного класса в выборке (здесь ~доля оттока). Поэтому baseline на графике рисуют горизонталью на этом уровне.
+    **Почему так.** Базовая линия PR-кривой — это доля оттока (~0.05). LightGBM с PR-AUC ~0.40 лежит примерно в 8 раз выше неё — именно это расстояние, а не абсолютная цифра, говорит о пользе. Сравнивать PR-AUC двух задач с разным дисбалансом напрямую нельзя: у каждой своя «случайная» планка.
+
+Проверь понимание:
+
+```text
+Q: Модель показала ~95% accuracy при ~5% оттока. Это хорошо?
+[ ] Да, 95% — отличная точность
+[x] Нет: константа «никто не уйдёт» тоже даёт ~95% и ловит ноль оттока
+[ ] Зависит только от ROC-AUC
+> При сильном дисбалансе accuracy измеряет в основном умение угадывать большинство. Полезность модели — в редком позитивном классе, который accuracy игнорирует.
+---
+Q: Почему ROC-AUC = 0.92 может вводить в заблуждение при дисбалансе 5%?
+[ ] ROC-AUC нельзя считать при дисбалансе
+[x] ROC учитывает огромное число истинно-негативных и легко уходит вверх, не показывая, что среди помеченных «уйдёт» много ложных
+[ ] 0.92 — это всегда признак переобучения
+> ROC оперирует TPR/FPR; при море негативов FPR остаётся низким даже с кучей FP. PR-кривая смотрит прямо на precision позитивного класса и честнее при дисбалансе.
+---
+Q: Чему равна PR-AUC случайного предсказателя?
+[ ] Всегда 0.5
+[x] Доле позитивного класса в выборке (здесь — доле оттока)
+[ ] Нулю
+> У случайной модели precision на любом recall равен доле позитивов. Поэтому baseline рисуют горизонталью на этом уровне, а не на 0.5.
+```
 
 ### Шаг 7: Порог по бизнес-стоимости
 
-**Зависит от денег, а не от 0.5.** Дефолтный порог `predict_proba > 0.5` оптимален только если ошибки равноценны. У нас не так. Зададим стоимость:
+**Зачем.** Дефолтный порог `predict_proba > 0.5` оптимален только если ошибки равноценны. У нас не так:
 
 - **FN** (пропустили уходящего) — теряем будущий LTV игрока, скажем 50 у.е.
 - **FP** (зря пометили лояльного) — стоимость кампании удержания + риск раздражения, скажем 5 у.е.
 
-Подбираем порог, минимизирующий суммарную стоимость, а не максимизирующий F1.
+Порог подбираем так, чтобы минимизировать суммарную стоимость, а не максимизировать F1.
 
-```python
-import numpy as np
+Сначала прикинь верхнюю планку «стоимости бездействия» руками:
 
-COST_FN = 50.0   # упущенный игрок
-COST_FP = 5.0    # зря потраченное удержание
-
-thresholds = np.linspace(0.05, 0.95, 91)
-costs = []
-for t in thresholds:
-    pred = (p_lgb >= t).astype(int)
-    fp = ((pred == 1) & (y_test == 0)).sum()
-    fn = ((pred == 0) & (y_test == 1)).sum()
-    costs.append(fp * COST_FP + fn * COST_FN)
-
-best_t = thresholds[int(np.argmin(costs))]
-print(f"Оптимальный порог: {best_t:.2f}")
-
-pred = (p_lgb >= best_t).astype(int)
-print(classification_report(y_test, pred, digits=3))
+```text
+TASK: В test-срезе 379 реально уходящих игроков. Если порог настолько высок, что модель не помечает уходящим никого, все они становятся FN. При COST_FN=50 у.е. чему равна суммарная стоимость ошибок в у.е.?
+ANSWER: 18950
+TOL: 50
+PLACEHOLDER: целое число у.е.
+EXPLAIN: 379 * 50 = 18950 у.е. Это «стоимость ничегонеделания» - верхняя планка, которую модель должна окупить. Оптимальный порог ищется как минимум функции FP*5 + FN*50 по сетке порогов.
 ```
 
-**Что получилось:** порог обычно уезжает заметно ниже 0.5 (часто 0.15-0.3), потому что пропустить уходящего в 10 раз дороже, чем зря дёрнуть лояльного — модель должна быть «параноиком». Это и есть перевод ML в деньги.
+**Задача (код).** Перебери пороги `np.linspace(0.05, 0.95, 91)`, для каждого посчитай `FP` и `FN` на test и суммарную стоимость `FP*COST_FP + FN*COST_FN`. Сохрани список `costs` и порог минимальной стоимости в `best_t`. Распечатай `classification_report` на этом пороге.
+
+**Критерий шага:**
+
+```python
+assert 0.30 <= best_t <= 0.70, "на наших данных минимум стоимости лежит около середины"
+assert min(costs) < costs[-1], "оптимум должен быть дешевле, чем 'почти никого не дёргать'"
+print(f"OK: оптимальный порог по стоимости = {best_t:.2f}")
+```
+
+??? success "Решение"
+
+    ```python
+    import numpy as np
+    from sklearn.metrics import classification_report
+
+    COST_FN = 50.0   # упущенный игрок
+    COST_FP = 5.0    # зря потраченное удержание
+
+    thresholds = np.linspace(0.05, 0.95, 91)
+    costs = []
+    for t in thresholds:
+        pred = (p_lgb >= t).astype(int)
+        fp = ((pred == 1) & (y_test == 0)).sum()
+        fn = ((pred == 0) & (y_test == 1)).sum()
+        costs.append(fp * COST_FP + fn * COST_FN)
+
+    best_t = thresholds[int(np.argmin(costs))]
+    print(f"Оптимальный порог: {best_t:.2f}")
+
+    pred = (p_lgb >= best_t).astype(int)
+    print(classification_report(y_test, pred, digits=3))
+    ```
+
+    **Почему так.** На наших данных минимум стоимости лежит около **0.52** — не сильно ниже 0.5. Это контринтуитивно (FN же в 10 раз дороже FP!), но объяснимо: отток редкий (~5%), а precision модели невысокая (~0.25), поэтому при снижении порога поток ложных срабатываний (`FP*5`) растёт быстрее, чем экономия на пойманных уходящих (`FN*50`). Направление сдвига порога зависит и от стоимости ошибок, **и** от базовой доли позитива. Принцип неизменен: порог выбирается по кривой стоимости, а не берётся 0.5 «по умолчанию» — на других данных (более частый отток или ещё более дорогой FN) тот же расчёт уехал бы заметно ниже 0.5.
 
 !!! example "Матрица стоимости как продуктовый разговор"
 
     Числа `COST_FN`/`COST_FP` — не из кода, а из переговоров с продуктом и финансами. Реальный LTV берётся из когортного анализа (см. воркшоп W1/W5), стоимость кампании — из CRM-бюджета. Меняются цифры — двигается порог. Покажи стейкхолдеру кривую стоимости от порога: это лучший аргумент, почему не 0.5.
 
+Проверь понимание:
+
+```text
+Q: Почему порог не фиксируют на 0.5 «по умолчанию»?
+[ ] 0.5 нельзя использовать в LightGBM
+[x] 0.5 оптимален лишь при равной цене ошибок; при асимметрии FN/FP порог сдвигается туда, где минимальна суммарная стоимость
+[ ] Порог обязан быть ниже 0.5 при любом дисбалансе
+> Порог — это бизнес-ручка, а не свойство модели. Его задаёт минимум функции стоимости, а конкретное значение зависит и от цены ошибок, и от доли позитива.
+```
+
 ### Шаг 8: Интерпретация через SHAP
 
 **Зачем.** Бизнесу мало вероятности — нужен ответ «почему этот игрок уходит» и «что вообще гонит отток». SHAP раскладывает каждое предсказание на вклады признаков, аддитивно и согласованно. Глобально — какие фичи важны; локально — почему именно этот игрок помечен.
 
+**Задача.** Построй `explainer = shap.TreeExplainer(model)` и `shap_values`. Собери таблицу `imp` с колонками `feature` и `mean_abs_shap` (средний модуль SHAP-вклада по test), отсортированную по убыванию. Посмотри топ-10 и сверь с тем, что заложено в генератор (затухание активности).
+
+**Критерий шага:**
+
 ```python
-import shap
-
-explainer = shap.TreeExplainer(model)
-shap_values = explainer.shap_values(test[features])
-
-# Глобально: важность и направление
-shap.summary_plot(shap_values, test[features], show=True)
-
-# Топ драйверов одним числом (средний |SHAP|)
-import numpy as np
-imp = pd.DataFrame({
-    "feature": features,
-    "mean_abs_shap": np.abs(shap_values).mean(axis=0),
-}).sort_values("mean_abs_shap", ascending=False)
-print(imp.head(10))
-
-# Локально: объяснение одного игрока
-i = int(np.argmax(p_lgb))  # самый "уходящий"
-shap.force_plot(explainer.expected_value, shap_values[i], test[features].iloc[i],
-                matplotlib=True)
+assert {"feature", "mean_abs_shap"} <= set(imp.columns)
+assert imp.iloc[0]["mean_abs_shap"] > 0
+top_feat = imp.iloc[0]["feature"]
+assert top_feat in {"sessions_30d", "n_bets_30d", "sessions_90d",
+                    "recency_days", "bet_sum_90d", "dep_sum_90d"}, "топ-драйвер — поведенческий"
+assert "player_id" not in imp["feature"].values, "id не должен быть фичей (иначе утечка)"
+print(f"OK: топ-драйвер оттока = {top_feat}")
 ```
 
-**Что получилось:** ожидаемо наверху `recency_days` (давно не заходил — толкает к оттоку) и `trend_sessions` (падающая активность). Это совпадает со скрытой `decay`, которую мы заложили в генератор, — значит модель реконструировала истинную причину, а не шум. Локальный график показывает конкретному игроку: «recency 21 день и падающий тренд дают +0.4 к вероятности оттока».
+??? success "Решение"
+
+    ```python
+    import shap
+    import numpy as np
+
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(test[features])
+    # для бинарной задачи новые версии shap возвращают список [class0, class1]
+    sv = shap_values[1] if isinstance(shap_values, list) else shap_values
+
+    # Глобально: важность и направление
+    shap.summary_plot(sv, test[features], show=True)
+
+    # Топ драйверов одним числом (средний |SHAP|)
+    imp = pd.DataFrame({
+        "feature": features,
+        "mean_abs_shap": np.abs(sv).mean(axis=0),
+    }).sort_values("mean_abs_shap", ascending=False)
+    print(imp.head(10))
+
+    # Локально: объяснение одного игрока
+    i = int(np.argmax(p_lgb))  # самый "уходящий"
+    shap.force_plot(explainer.expected_value, sv[i], test[features].iloc[i],
+                    matplotlib=True)
+    ```
+
+    **Почему так.** Наверху оказываются объёмные поведенческие фичи — `sessions_30d`, `n_bets_30d`, `bet_sum_90d`: чем меньше игрок играл за последние недели, тем выше его SHAP-вклад в отток. `recency_days` тоже информативен, но в топ-1 здесь выходит именно частота активности, а не recency — модель реконструировала заложенное в генератор затухание `decay` через объём игры, а не только через «давно не заходил». Это и есть проверка: драйверы осмыслены и совпадают со скрытой причиной, а не с шумом.
 
 !!! tip "SHAP как sanity-check утечки"
 
@@ -446,72 +663,110 @@ shap.force_plot(explainer.expected_value, shap_values[i], test[features].iloc[i]
 
 **Зачем.** Утечка — причина №1 моделей, которые блестят на валидации и проваливаются в проде. Пройдёмся по трём типам осознанно.
 
-**1. Временная утечка.** Уже закрыта временным сплитом (Шаг 2) и фильтром `ts < cutoff` в фичах. Проверка: метрика на test не должна резко превышать кросс-валидацию внутри train. Аномально высокий AUC (>0.95) на поведенческих данных — почти всегда утечка.
+1. **Временная утечка.** Уже закрыта временным сплитом (Шаг 2) и фильтром `ts < cutoff` в фичах. Симптом утечки — аномально высокий AUC (>0.95) на поведенческих данных.
+2. **Утечка через препроцессинг.** Закрыта pipeline'ом (Шаг 4): scaler/энкодеры учатся только на train.
+3. **Утечка через группы.** Один игрок не должен «обучать» модель сам на себя. Для строгой оценки внутри одного окна используем **GroupKFold по `player_id`**.
 
-**2. Утечка через препроцессинг.** Закрыта pipeline'ом (Шаг 4): scaler/энкодеры учатся только на train fold. Никаких `fit` на полном датасете до сплита.
+**Задача.** Прогони `GroupKFold(n_splits=5)` по `train`, группируя по `train.player_id`, обучая LightGBM на каждом фолде (`num_boost_round = model.best_iteration or 500`) и считая PR-AUC на отложенном фолде. Сохрани список `aps` и сравни его среднее с test-PR-AUC из временного сплита — близость значений говорит, что групповой утечки нет.
 
-**3. Утечка через группы.** Один игрок не должен «обучать» модель сам на себя. Поскольку train и test у нас на разных временных окнах, базовая защита есть. Для строгой оценки внутри одного окна используем **GroupKFold по `player_id`**:
+**Критерий шага:**
 
 ```python
-from sklearn.model_selection import GroupKFold
-from sklearn.metrics import average_precision_score
 import numpy as np
-
-gkf = GroupKFold(n_splits=5)
-X, y, groups = train[features], y_train, train.player_id
-aps = []
-for tr_idx, va_idx in gkf.split(X, y, groups):
-    dtr = lgb.Dataset(X.iloc[tr_idx], label=y.iloc[tr_idx],
-                      categorical_feature=cat_cols)
-    m = lgb.train(params, dtr, num_boost_round=model.best_iteration or 500)
-    p = m.predict(X.iloc[va_idx])
-    aps.append(average_precision_score(y.iloc[va_idx], p))
-print(f"GroupKFold PR-AUC: {np.mean(aps):.3f} ± {np.std(aps):.3f}")
+gk_mean = float(np.mean(aps))
+assert 0.20 <= gk_mean <= 0.40, "GroupKFold PR-AUC в разумном коридоре, не аномально высокий"
+assert gk_mean < pr_lgb + 0.15, "CV не должна резко превышать test — иначе сигнал утечки"
+print(f"OK: GroupKFold PR-AUC={gk_mean:.3f} согласуется с test={pr_lgb:.3f}")
 ```
 
-**Что получилось:** если GroupKFold-метрика близка к test-метрике из временного сплита — модель стабильна, утечки групп нет. Большой разрыв (CV сильно выше test) — сигнал, что что-то протекает через время.
+??? success "Решение"
 
-!!! question "Проверь себя"
+    ```python
+    from sklearn.model_selection import GroupKFold
+    from sklearn.metrics import average_precision_score
+    import numpy as np
 
-    1. Чем временная утечка отличается от утечки через группы?
-    2. Зачем GroupKFold по `player_id`, если уже есть временной сплит?
-    3. Ты видишь test PR-AUC 0.97 на поведенческих данных. Радоваться?
+    gkf = GroupKFold(n_splits=5)
+    X, y, groups = train[features], y_train, train.player_id
+    aps = []
+    for tr_idx, va_idx in gkf.split(X, y, groups):
+        dtr = lgb.Dataset(X.iloc[tr_idx], label=y.iloc[tr_idx],
+                          categorical_feature=cat_cols)
+        m = lgb.train(params, dtr, num_boost_round=model.best_iteration or 500)
+        p = m.predict(X.iloc[va_idx])
+        aps.append(average_precision_score(y.iloc[va_idx], p))
+    print(f"GroupKFold PR-AUC: {np.mean(aps):.3f} ± {np.std(aps):.3f}")
+    ```
 
-??? success "Ответы"
+    **Почему так.** GroupKFold-метрика выходит ~0.29 — она даже чуть ниже test-PR-AUC (~0.40), потому что train-окно (день 150) беднее на отток, чем test (день 180). Главное — нет разрыва «CV в небеса, test на полу», который выдал бы утечку. Если бы где-то протекало будущее, кросс-валидация показала бы аномально высокие 0.95+, и это был бы повод искать «слишком хорошую» фичу.
 
-    1. Временная — фичи посчитаны с использованием данных из будущего (после cutoff). Групповая — строки одного игрока попали и в train, и в valid внутри одного окна, и модель запомнила игрока, а не паттерн.
-    2. Временной сплит защищает от заглядывания в будущее, но при кросс-валидации **внутри** train игрок может оказаться в обоих фолдах — GroupKFold это исключает, давая более честную оценку обобщения на новых игроков.
-    3. Скорее насторожиться. На реальном поведении 0.97 почти всегда означает утечку — ищи фичу, которая косвенно знает таргет (например, посчитана без фильтра по cutoff).
+Проверь понимание:
+
+```text
+Q: Чем временная утечка отличается от утечки через группы?
+[ ] Это два названия одного и того же
+[x] Временная — фичи посчитаны с данными после cutoff; групповая — строки одного игрока попали в train и valid одного окна, и модель запомнила игрока
+[ ] Временная бывает только в логистической, групповая — только в бустинге
+> Первая нарушает ось времени (знание будущего), вторая — независимость наблюдений (один игрок учит и проверяет). Лечатся разными приёмами: временной сплит и GroupKFold.
+---
+Q: Зачем GroupKFold по player_id, если уже есть временной сплит?
+[ ] Чтобы ускорить обучение
+[x] Внутри train при обычной CV игрок может попасть в оба фолда; GroupKFold даёт честную оценку обобщения на НОВЫХ игроков
+[ ] Чтобы сбалансировать классы между фолдами
+> Временной сплит защищает от заглядывания в будущее, но не от того, что один игрок окажется в обоих фолдах кросс-валидации. GroupKFold закрывает именно это.
+---
+Q: Ты видишь test PR-AUC 0.97 на поведенческих данных. Радоваться?
+[ ] Да, отличная модель, можно деплоить
+[x] Скорее насторожиться: на реальном поведении 0.97 почти всегда означает утечку
+[ ] Да, если ROC-AUC тоже выше 0.95
+> Поведение людей шумное; «почти идеальная» метрика обычно значит, что фича косвенно знает таргет (посчитана без фильтра по cutoff). Ищи утечку, а не повод радоваться.
+```
 
 ### Шаг 10: Сериализация артефакта
 
-**Зачем.** Модель без сохранённого порога и списка фич — наполовину готовый артефакт. Кладём модель, порог, список фич и метаданные вместе.
+**Зачем.** Модель без сохранённого порога и списка фич — наполовину готовый артефакт. Кладём модель, порог, список фич и метаданные вместе, чтобы сервис скоринга мог их использовать без догадок.
+
+**Задача.** Собери словарь `artifact` с ключами `model`, `features`, `cat_cols`, `threshold` (это `best_t`), `churn_n_days`, `cutoff_train`, `metrics` (PR-AUC) и `trained_at`. Сохрани через `joblib.dump(artifact, "churn_model.pkl")` и проверь, что файл читается обратно.
+
+**Критерий шага:**
 
 ```python
-import joblib, json, datetime
-
-artifact = {
-    "model": model,
-    "features": features,
-    "cat_cols": cat_cols,
-    "threshold": float(best_t),
-    "churn_n_days": CHURN_N_DAYS,
-    "cutoff_train": str(CUTOFF_TRAIN.date()),
-    "metrics": {"pr_auc": float(average_precision_score(y_test, p_lgb))},
-    "trained_at": datetime.datetime.utcnow().isoformat(),
-}
-joblib.dump(artifact, "churn_model.pkl")
-print("saved", artifact["metrics"], "threshold", artifact["threshold"])
+from pathlib import Path
+import joblib
+loaded = joblib.load("churn_model.pkl")
+assert Path("churn_model.pkl").exists(), "артефакт должен быть на диске"
+assert "threshold" in loaded and "churn_n_days" in loaded, "порог и N едут вместе с моделью"
+assert set(loaded["features"]) == set(features)
+print("OK: артефакт сохранён, порог =", round(loaded["threshold"], 2))
 ```
 
-**Что получилось:** один файл `churn_model.pkl`, который можно отдать в сервис скоринга (см. воркшоп W8 про деплой и мониторинг дрейфа). Порог и `churn_n_days` едут вместе с моделью — без них предсказание не интерпретируется.
+??? success "Решение"
+
+    ```python
+    import joblib, datetime
+
+    artifact = {
+        "model": model,
+        "features": features,
+        "cat_cols": cat_cols,
+        "threshold": float(best_t),
+        "churn_n_days": CHURN_N_DAYS,
+        "cutoff_train": str(CUTOFF_TRAIN.date()),
+        "metrics": {"pr_auc": float(average_precision_score(y_test, p_lgb))},
+        "trained_at": datetime.datetime.utcnow().isoformat(),
+    }
+    joblib.dump(artifact, "churn_model.pkl")
+    print("saved", artifact["metrics"], "threshold", artifact["threshold"])
+    ```
+
+    **Почему так.** Один файл `churn_model.pkl`, который можно отдать в сервис скоринга (см. воркшоп W8 про деплой и мониторинг дрейфа). Порог и `churn_n_days` едут вместе с моделью — без них предсказание не интерпретируется: тот же скор при N=14 и N=30 означает разные вещи.
 
 ## Типичные ошибки
 
 - **Фичи посчитаны на всём логе, включая outcome-окно.** Классика. Всегда фильтруй `events.ts < cutoff` первой строкой генератора фич. Симптом — нереально высокий AUC.
 - **Случайный train/test split.** Для churn нужен временной. Перемешивание даёт оптимистичную метрику и провал в проде.
-- **Accuracy как метрика.** При 20% оттока бесполезна. PR-AUC + бизнес-порог.
-- **Порог 0.5 по умолчанию.** Игнорирует асимметрию стоимости ошибок. Подбирай по матрице FN/FP.
+- **Accuracy как метрика.** При редком оттоке (~5%) бесполезна — константа даёт ~95%. Бери PR-AUC + бизнес-порог.
+- **Порог 0.5 по умолчанию.** Игнорирует асимметрию стоимости ошибок. Подбирай по матрице FN/FP — и помни, что направление сдвига зависит ещё и от базовой доли позитива.
 - **Scaler/encoder обучен до сплита.** Утечка через препроцессинг. Только pipeline, только fit на train.
 - **Senior-уровень: дрейф определения churn.** N=30 на этапе обучения и N=14 в проде — модель учили предсказывать одно, спрашивают другое. Зафиксируй `churn_n_days` в артефакте.
 - **Senior-уровень: утечка через будущие справочники.** Если `country`/сегмент игрока обновился ПОСЛЕ cutoff (например, VIP-статус присвоен в outcome-окне) — это утечка статики. Бери атрибуты на момент cutoff, а не текущие.
@@ -522,14 +777,14 @@ print("saved", artifact["metrics"], "threshold", artifact["threshold"])
 
     Нейросеть сильно ускорит рутину: генерацию синтетики, синтаксис оконных агрегатов pandas, обвязку SHAP-графиков, формулировку `classification_report`. Проси у неё каркас `make_features` и параметры LightGBM — это экономит часы.
 
-    Где копилот подведёт именно здесь: он почти всегда предложит `train_test_split(shuffle=True)` и `accuracy`/`roc_auc` по умолчанию — то есть ровно те две ошибки, которые губят churn-модели. Он не знает твоей матрицы стоимости и предложит порог 0.5. И он не заметит временную утечку, если ты не описал ему границу cutoff явно. Решения про **определение таргета, временной сплит и бизнес-порог** держи на себе — это инженерия, которую модель за тебя не примет. Используй ИИ для кода, не для методологии.
+    Где копилот подведёт именно здесь: он почти всегда предложит `train_test_split(shuffle=True)` и `accuracy`/`roc_auc` по умолчанию — то есть ровно те две ошибки, которые губят churn-модели. Он не знает твоей матрицы стоимости и предложит порог 0.5. И он не заметит временную утечку, если ты не описал границу cutoff явно. Решения про **определение таргета, временной сплит и бизнес-порог** держи на себе — это инженерия, которую модель за тебя не примет. Используй ИИ для кода, не для методологии.
 
 ## Критерий готовности
 
 - [ ] Churn определён операционно: зафиксированы `N`, `cutoff`, `outcome window`, кандидаты отфильтрованы по активности до cutoff.
 - [ ] Сплит временной (train на раннем cutoff, test на позднем), не случайный, и ты можешь объяснить почему.
 - [ ] Все фичи считаются строго по `events.ts < cutoff`; проверено отсутствие будущих данных.
-- [ ] Есть два baseline (правило + логистическая), LightGBM их превосходит по PR-AUC.
+- [ ] Есть два baseline (правило + логистическая), LightGBM их не уступает по PR-AUC.
 - [ ] Основная метрика — PR-AUC, на графике нарисована базовая линия = доля оттока.
 - [ ] Порог выбран по матрице стоимости FN/FP, а не 0.5; есть кривая стоимости от порога.
 - [ ] SHAP-summary построен, топ-драйверы оттока названы и осмыслены.
@@ -538,17 +793,17 @@ print("saved", artifact["metrics"], "threshold", artifact["threshold"])
 
 ## Бизнес-вывод
 
-Модель и SHAP-таблица — это ещё не ответ для Head of Retention. Переведи технический результат в решение, которое можно вынести на планёрку и под которое выделят бюджет.
+Модель и SHAP-таблица — это ещё не ответ для Head of Retention. Переведи технический результат в решение, которое можно вынести на планёрку и под которое выделят бюджет. Пройди чек-лист:
 
 - [ ] **Рекомендация.** Сформулируй одной строкой, что делать: «переключить CRM-реактивацию с правила "14 дней" на скоринг модели, включать в кампанию игроков с вероятностью оттока выше порога 0.X» — назови порог и сколько игроков в месяц под него попадает.
 - [ ] **Эффект в деньгах.** Посчитай по матрице стоимости: при выбранном пороге модель ловит N% уходящих (recall) с точностью P% (precision). Переведи в у.е. — сколько LTV спасаем против текущего правила и сколько экономим на ложных срабатываниях (FP × 5 у.е.). Сравнивай с baseline-правилом, а не с нулём.
-- [ ] **Риски и допущения.** Явно назови: LTV=50 и стоимость кампании=5 у.е. — оценки от продукта и финансов, при их пересмотре порог двигается; модель обучена на «тихом» периоде и может переоценивать отток в высокий сезон; часть уходящих не реагирует на бонус (нужен uplift, см. «Развитие»).
+- [ ] **Риски и допущения.** Явно назови: LTV=50 и стоимость кампании=5 у.е. — оценки от продукта и финансов, при их пересмотре порог двигается; отток на нашем срезе редкий (~5%), и модель обучена на «тихом» периоде — в высокий сезон она может переоценивать отток; часть уходящих не реагирует на бонус (нужен uplift, см. «Развитие»).
 - [ ] **Следующий шаг.** Предложи конкретику: A/B-пилот модели против правила «14 дней» на одной когорте, измерять спасённую выручку и стоимость кампании; при подтверждении — деплой скоринга в CRM (W8).
-- [ ] **Подача стейкхолдеру.** Говори языком решений, не метрик: не «PR-AUC 0.74», а «из 1 600 уходящих в месяц предметно дотянемся до ~1 100, не тратя бюджет на ~X тысяч лояльных — это +Y у.е. удержанной выручки при том же бюджете». Покажи кривую стоимости от порога как аргумент, почему не 0.5.
+- [ ] **Подача стейкхолдеру.** Говори языком решений, не метрик: не «PR-AUC 0.40», а «модель находит уходящих в разы точнее случайного тыка и текущего правила, дотягиваемся до тех, кого реально стоит удерживать, не тратя бюджет на лояльных — это +Y у.е. удержанной выручки при том же бюджете». Покажи кривую стоимости от порога как аргумент, почему не 0.5.
 
 ## Развитие
 
-1. **Несколько cutoff'ов** — собери обучающую выборку по 4-5 датам cutoff (с шагом 2 недели), увеличив объём и устойчивость; обязательно GroupKFold по `player_id`.
+1. **Несколько cutoff'ов** — собери обучающую выборку по 4-5 датам cutoff (с шагом 2 недели), увеличив объём и устойчивость; обязательно GroupKFold по `player_id`. Заодно это поднимет долю оттока в обучении.
 2. **Калибровка вероятностей** — `CalibratedClassifierCV` или isotonic: бустинг даёт «уверенные» вероятности, для расчёта ожидаемых потерь они должны быть калиброванными.
 3. **Uplift-моделирование** — предсказывай не «уйдёт ли», а «изменит ли удержание поведение»; не все уходящие реагируют на бонус, часть уйдёт всё равно.
 4. **Time-to-churn вместо бинарной метки** — survival-анализ (Cox, lifelines): когда уйдёт, а не только уйдёт ли.
@@ -558,4 +813,4 @@ print("saved", artifact["metrics"], "threshold", artifact["threshold"])
 
 Этот воркшоп связал воедино всю **Фазу 4**: основы ML и валидацию (M13), классификацию и градиентный бустинг (M14), feature engineering с оконными агрегатами, лагами и recency (M16), и — самое важное — подводные камни и интерпретацию (M17): три типа утечки, выбор метрики под дисбаланс, бизнес-порог и SHAP.
 
-Главный навык, который ты унёс, — не `model.fit`, а **дисциплина честности**: операционно определить таргет, отделить прошлое от будущего во времени, не дать данным протечь и измерить модель так, чтобы цифра на валидации совпала с пользой в проде. Это то, что отличает ML-инженера от человека, который умеет звать sklearn.
+Главный навык, который ты унёс, — не `model.fit`, а **дисциплина честности**: операционно определить таргет, отделить прошлое от будущего во времени, не дать данным протечь и измерить модель так, чтобы цифра на валидации совпала с пользой в проде. Ты на собственных числах увидел, что реальный отток оказался редким (~5%, а не «20% на глаз»), что бустинг лишь немного обошёл логистическую, а оптимальный порог встал около 0.5 — и это нормально: задача аналитика не подогнать данные под ожидание, а честно показать, что есть, и перевести это в решение. Именно это отличает ML-инженера от человека, который умеет звать sklearn.
