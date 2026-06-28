@@ -61,7 +61,13 @@
     return "no";
   }
 
-  function renderTask(t) {
+  function award(dkIdx) {
+    if (window.DSA && DSA.award) {
+      try { DSA.award(10, "task:" + location.pathname + ":" + dkIdx); } catch (e) {}
+    }
+  }
+
+  function renderTask(t, dkIdx) {
     var wrap = document.createElement("div");
     wrap.className = "task";
 
@@ -119,6 +125,7 @@
       btn.disabled = true;
       if (revealBtn) revealBtn.remove();
       showExp();
+      award(dkIdx);
     }
 
     function check() {
@@ -140,6 +147,7 @@
         solved = true;
         if (revealBtn) revealBtn.remove();
         showExp();
+        award(dkIdx);
       } else if (res === "near") {
         verdict.className = "task-verdict near";
         verdict.textContent = "Близко — проверь округление";
@@ -166,13 +174,18 @@
     return wrap;
   }
 
-  function build(raw) {
+  function build(raw, base) {
     var tasks = parse(raw);
     if (!tasks.length) return null;
-    if (tasks.length === 1) return renderTask(tasks[0]);
+    if (tasks.length === 1) {
+      var single = renderTask(tasks[0], base);
+      single._tcount = 1;
+      return single;
+    }
     var box = document.createElement("div");
     box.className = "task-group";
-    tasks.forEach(function (t) { box.appendChild(renderTask(t)); });
+    tasks.forEach(function (t, i) { box.appendChild(renderTask(t, base + i)); });
+    box._tcount = tasks.length;
     return box;
   }
 
@@ -181,14 +194,16 @@
   }
 
   function initTasks() {
+    var base = 0;
     document.querySelectorAll("div.language-text").forEach(function (container) {
       if (container.dataset.taskDone) return;
       var code = container.querySelector("code");
       if (!code) return;
       var raw = code.textContent || "";
       if (!isTask(raw)) return;
-      var widget = build(raw);
+      var widget = build(raw, base);
       if (!widget) return;
+      base += widget._tcount || 0;
       container.dataset.taskDone = "1";
       container.replaceWith(widget);
     });

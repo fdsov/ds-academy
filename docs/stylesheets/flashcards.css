@@ -1,0 +1,180 @@
+/* DS Academy — флешкарты и интервальное повторение.
+   Использует только токены из theme.css; тёмная тема — автоматически. */
+
+/* ---- метка на уроке (тихая регистрация) ---- */
+.dsa-fc-tag {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  vertical-align: middle;
+  border-radius: 999px;
+  background: var(--dsa-accent-soft);
+  color: var(--dsa-accent);
+}
+
+/* ---- статистика ---- */
+.dsa-fc-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: var(--dsa-gap);
+  margin: 1.2rem 0 1.4rem;
+}
+.dsa-fc-stat {
+  background: var(--dsa-surface);
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius);
+  box-shadow: var(--dsa-shadow);
+  padding: 1rem 1.1rem;
+  text-align: center;
+}
+.dsa-fc-stat b {
+  display: block;
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--dsa-accent);
+}
+.dsa-fc-stat span {
+  font-size: 0.72rem;
+  color: var(--dsa-text-dim);
+}
+
+/* ---- действия ---- */
+.dsa-fc-actions {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  margin: 0 0 1.4rem;
+}
+.dsa-fc-note {
+  font-size: 0.78rem;
+  color: var(--dsa-text-dim);
+  margin: 0 0 1rem;
+}
+
+/* ---- сессия ---- */
+.dsa-fc-session { margin-top: 0.4rem; }
+
+.dsa-fc-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--dsa-surface-3);
+  overflow: hidden;
+  margin-bottom: 0.7rem;
+}
+.dsa-fc-bar__fill {
+  height: 100%;
+  background: var(--dsa-accent);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+.dsa-fc-counter {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--dsa-text-dim);
+  margin-bottom: 0.7rem;
+}
+
+/* ---- карточка повторения ---- */
+.dsa-fc-card {
+  background: var(--dsa-surface);
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius-lg);
+  box-shadow: var(--dsa-shadow-lg);
+  padding: 1.8rem 1.7rem;
+}
+.dsa-fc-card__src {
+  font-size: 0.68rem;
+  color: var(--dsa-text-dim);
+  margin-bottom: 1rem;
+}
+.dsa-fc-card__src a {
+  color: var(--dsa-accent);
+  text-decoration: none;
+}
+.dsa-fc-card__src a:hover { text-decoration: underline; }
+.dsa-fc-card__q {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--dsa-text);
+}
+.dsa-fc-card__q > :first-child,
+.dsa-fc-card__a > :first-child { margin-top: 0; }
+.dsa-fc-card__q > :last-child,
+.dsa-fc-card__a > :last-child { margin-bottom: 0; }
+.dsa-fc-card__a {
+  margin-top: 1.3rem;
+  padding-top: 1.3rem;
+  border-top: 1px solid var(--dsa-border);
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--dsa-text);
+}
+
+/* ---- действия внутри карточки ---- */
+.dsa-fc-card__actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+}
+.dsa-fc-reveal { min-width: 12rem; }
+
+/* кнопки оценки: контурные, заливаются по наведению/фокусу */
+.dsa-fc-grade {
+  flex: 1 1 7rem;
+  justify-content: center;
+  background: var(--dsa-surface);
+  border-width: 1px;
+  border-style: solid;
+}
+.dsa-fc-grade--again { border-color: var(--dsa-danger); color: var(--dsa-danger); }
+.dsa-fc-grade--again:hover { background: var(--dsa-danger); color: #fff; }
+.dsa-fc-grade--hard { border-color: var(--dsa-warn); color: var(--dsa-warn); }
+.dsa-fc-grade--hard:hover { background: var(--dsa-warn); color: #fff; }
+.dsa-fc-grade--good { border-color: var(--dsa-accent); color: var(--dsa-accent); }
+.dsa-fc-grade--good:hover { background: var(--dsa-accent); color: #fff; }
+.dsa-fc-grade--easy { border-color: var(--dsa-ok); color: var(--dsa-ok); }
+.dsa-fc-grade--easy:hover { background: var(--dsa-ok); color: #fff; }
+
+/* ---- завершение сессии ---- */
+.dsa-fc-done { text-align: center; }
+.dsa-fc-done__title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--dsa-ok);
+  margin-bottom: 0.6rem;
+}
+.dsa-fc-done p {
+  font-size: 0.85rem;
+  color: var(--dsa-text-dim);
+  margin: 0 auto 1.2rem;
+  max-width: 32rem;
+}
+
+/* ---- пустое состояние ---- */
+.dsa-fc-empty { text-align: center; }
+.dsa-fc-empty__title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--dsa-text);
+  margin-bottom: 0.5rem;
+}
+.dsa-fc-empty p {
+  font-size: 0.82rem;
+  color: var(--dsa-text-dim);
+  margin: 0 auto;
+  max-width: 34rem;
+}
+
+@media screen and (max-width: 44.9375em) {
+  .dsa-fc-card { padding: 1.3rem 1.1rem; }
+  .dsa-fc-card__q { font-size: 1rem; }
+  .dsa-fc-reveal { min-width: 0; width: 100%; }
+  .dsa-fc-grade { flex-basis: calc(50% - 0.3rem); }
+}

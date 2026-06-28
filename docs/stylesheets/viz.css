@@ -1,0 +1,221 @@
+/* DS Academy — интерактивные визуализации (```viz) + расширение квизов.
+   Только токены из theme.css. Тёмная тема переключается автоматически
+   через переопределённые токены в [data-md-color-scheme="slate"]. */
+
+/* =============================================================== VIZ */
+.dsa-viz {
+  background: var(--dsa-surface);
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius);
+  box-shadow: var(--dsa-shadow);
+  padding: 1.1rem 1.2rem 1.2rem;
+  margin: 1.4rem 0;
+}
+.dsa-viz__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dsa-accent);
+  margin-bottom: 0.9rem;
+}
+
+.dsa-viz__controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.9rem 1.4rem;
+  margin-bottom: 1rem;
+}
+.dsa-viz__ctrl-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+.dsa-viz__ctrl-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--dsa-text-dim);
+}
+.dsa-viz__ctrl-val {
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: var(--dsa-accent);
+}
+
+/* Слайдеры */
+.dsa-viz__range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--dsa-surface-3);
+  outline: none;
+  cursor: pointer;
+  margin: 0;
+}
+.dsa-viz__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dsa-accent);
+  border: 2px solid var(--dsa-surface);
+  box-shadow: var(--dsa-shadow);
+  cursor: pointer;
+}
+.dsa-viz__range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dsa-accent);
+  border: 2px solid var(--dsa-surface);
+  box-shadow: var(--dsa-shadow);
+  cursor: pointer;
+}
+.dsa-viz__range:focus-visible { outline: 2px solid var(--dsa-accent); outline-offset: 3px; }
+
+/* Холст: SVG-графики и таблицы */
+.dsa-viz__canvas { margin: 0.4rem 0 0.2rem; }
+.dsa-viz svg { display: block; width: 100%; height: auto; }
+
+.dsa-viz-axis { stroke: var(--dsa-border-strong); stroke-width: 1; }
+.dsa-viz-tick { stroke: var(--dsa-border-strong); stroke-width: 1; }
+.dsa-viz-ticklabel { fill: var(--dsa-text-dim); font-size: 9px; font-family: inherit; }
+.dsa-viz-curve { fill: none; stroke: var(--dsa-accent); stroke-width: 2; }
+.dsa-viz-interval { stroke: var(--dsa-accent); stroke-width: 6; stroke-linecap: round; opacity: 0.85; }
+.dsa-viz-cap { stroke: var(--dsa-accent-strong); stroke-width: 2; }
+.dsa-viz-point { fill: var(--dsa-surface); stroke: var(--dsa-accent-strong); stroke-width: 2.5; }
+.dsa-viz-guide { stroke: var(--dsa-accent); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.55; }
+.dsa-viz-bonf { stroke: var(--dsa-warn); stroke-width: 1.5; stroke-dasharray: 4 3; }
+
+/* Числовые ремарки */
+.dsa-viz__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+.dsa-viz__stat {
+  background: var(--dsa-surface-2);
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius-sm);
+  padding: 0.5rem 0.8rem;
+  min-width: 5.5rem;
+}
+.dsa-viz__stat b {
+  display: block;
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--dsa-text);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.dsa-viz__stat span {
+  font-size: 0.62rem;
+  color: var(--dsa-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.dsa-viz__note {
+  font-size: 0.74rem;
+  color: var(--dsa-text-dim);
+  line-height: 1.55;
+  margin-top: 0.7rem;
+}
+.dsa-viz__note strong { color: var(--dsa-text); }
+.dsa-viz__note--warn {
+  background: color-mix(in srgb, var(--dsa-warn) 12%, transparent);
+  border-left: 3px solid var(--dsa-warn);
+  border-radius: var(--dsa-radius-sm);
+  padding: 0.6rem 0.8rem;
+}
+.dsa-viz__note--warn strong { color: var(--dsa-warn); }
+
+/* Таблица парадокса Симпсона */
+.dsa-viz-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin-top: 0.3rem;
+}
+.dsa-viz-table th,
+.dsa-viz-table td {
+  border: 1px solid var(--dsa-border);
+  padding: 0.45rem 0.6rem;
+  text-align: center;
+}
+.dsa-viz-table th {
+  background: var(--dsa-surface-2);
+  font-weight: 700;
+  color: var(--dsa-text-dim);
+}
+.dsa-viz-table td:first-child,
+.dsa-viz-table th:first-child {
+  text-align: left;
+  font-weight: 600;
+  color: var(--dsa-text);
+}
+.dsa-viz-table .cr {
+  display: block;
+  font-weight: 800;
+  font-size: 0.92rem;
+  color: var(--dsa-text);
+  font-variant-numeric: tabular-nums;
+}
+.dsa-viz-table .sub { font-size: 0.62rem; color: var(--dsa-text-dim); }
+.dsa-viz-table tr.is-total td { border-top: 2px solid var(--dsa-border-strong); }
+.dsa-viz-table td.is-win { background: var(--dsa-ok-soft); }
+.dsa-viz-table td.is-win .cr { color: var(--dsa-ok); }
+.dsa-viz-table td.is-paradox { background: color-mix(in srgb, var(--dsa-danger) 14%, transparent); }
+.dsa-viz-table td.is-paradox .cr { color: var(--dsa-danger); }
+
+@media screen and (max-width: 44.9375em) {
+  .dsa-viz { padding: 0.9rem 1rem 1rem; }
+  .dsa-viz-table { font-size: 0.72rem; }
+  .dsa-viz-table th, .dsa-viz-table td { padding: 0.35rem 0.4rem; }
+}
+
+/* ============================================== QUIZ: multi-select */
+/* Базовые .quiz-opt / .quiz-verdict / .quiz-exp заданы в extra.css.
+   Здесь — только надстройка для multi-select (чекбоксы + «Проверить»). */
+.quiz-opt--multi {
+  position: relative;
+  padding-left: 2.1rem;
+}
+.quiz-opt--multi::before {
+  content: "";
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  border-radius: 5px;
+  border: 1.5px solid var(--dsa-border-strong);
+  background: var(--dsa-surface);
+  transition: background 0.12s, border-color 0.12s;
+}
+.quiz-opt--multi.is-selected::before {
+  background: var(--dsa-accent);
+  border-color: var(--dsa-accent);
+}
+.quiz-opt--multi.is-selected::after {
+  content: "";
+  position: absolute;
+  left: 1.06rem;
+  top: 50%;
+  width: 0.28rem;
+  height: 0.55rem;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: translateY(-62%) rotate(45deg);
+}
+.quiz-check {
+  margin-top: 0.7rem;
+}
+.quiz-check[disabled] { opacity: 0.5; cursor: default; pointer-events: none; }

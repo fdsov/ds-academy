@@ -81,18 +81,29 @@ markdown_extensions:
 extra_javascript:
   - javascripts/mathjax.js
   - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+  - javascripts/gamify.js
   - javascripts/progress.js
   - javascripts/quiz.js
   - javascripts/task.js
-  - javascripts/step-nav.js
+  - javascripts/pyodide-run.js
+  - javascripts/flashcards.js
+  - javascripts/viz.js
+  - javascripts/lesson-deck.js
 
 extra_css:
+  - stylesheets/theme.css
   - stylesheets/extra.css
+  - stylesheets/gamify.css
+  - stylesheets/pyodide.css
+  - stylesheets/flashcards.css
+  - stylesheets/viz.css
 
 nav:
   - Главная: index.md
   - Как учиться: methodology.md
   - Программа курса: curriculum.md
+  - Повторение: review.md
+  - Мой прогресс: dashboard.md
   - "Фаза 0 · Фундамент":
       - "M0 · Как мыслит data scientist":
           - phase0/m0/index.md

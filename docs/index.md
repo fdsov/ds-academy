@@ -1,11 +1,76 @@
+---
+hide:
+  - toc
+---
+
+<div class="dsa-hero" markdown>
+
 # DS Academy
 
-**Путь в Data Science от полного нуля до research-level.** Не курс «натренируй модель за выходные», а методичная программа, которая выстраивает мышление учёного, математический фундамент и инженерные навыки — в правильном порядке.
+Путь в Data Science от полного нуля до research-level. Не курс «натренируй модель за выходные», а методичная программа: мышление учёного, математический фундамент и инженерные навыки — в правильном порядке.
 
-Эта платформа собрана как личный университет: лекции с развёрнутым разбором каждого понятия, конспекты, практика на реальных задачах, актуальный стек **2026 года** и сквозная линия — **где нейросети реально помогают data scientist, а где врут**.
+<div class="dsa-hero__cta">
+<a class="dsa-btn dsa-btn--primary" href="phase0/m0/index.md">Начать с M0</a>
+<a class="dsa-btn dsa-btn--ghost" id="dsa-continue" href="curriculum.md" style="display:none">Продолжить</a>
+<a class="dsa-btn dsa-btn--ghost" href="curriculum.md">Программа курса</a>
+</div>
 
-!!! quote "Принцип курса"
-    Глубина важнее скорости. Человек с правильным мышлением и слабым Python обгонит человека с сильным Python и установкой «accuracy 95%, готово». Сначала — как думать и как не обмануться данными. Потом — инструменты и модели.
+<div class="dsa-hero__stats">
+<div class="dsa-hero__stat"><b>8</b><span>фаз</span></div>
+<div class="dsa-hero__stat"><b>29</b><span>модулей</span></div>
+<div class="dsa-hero__stat"><b data-dsa-stat="done">0</b><span>шагов пройдено</span></div>
+<div class="dsa-hero__stat"><b data-dsa-stat="xp">0</b><span>XP</span></div>
+</div>
+
+</div>
+
+## Карта пути
+
+Восемь фаз, выстроенных по логике самой дисциплины, а не по «модности» тем. Кольца показывают твой прогресс (хранится локально в браузере).
+
+<div class="dsa-phases">
+
+<a class="dsa-phase" href="phase0/m0/index.md">
+<span class="dsa-ring" data-dsa-ring="phase0"></span>
+<span class="dsa-phase__body"><span class="dsa-phase__title">0 · Фундамент</span><span class="dsa-phase__desc">Мышление, среда 2026, Python, математика</span></span>
+</a>
+
+<a class="dsa-phase" href="phase1/m4/index.md">
+<span class="dsa-ring" data-dsa-ring="phase1"></span>
+<span class="dsa-phase__body"><span class="dsa-phase__title">1 · Данные</span><span class="dsa-phase__desc">SQL, NumPy, Pandas/Polars, очистка</span></span>
+</a>
+
+<a class="dsa-phase" href="phase2/m8/index.md">
+<span class="dsa-ring" data-dsa-ring="phase2"></span>
+<span class="dsa-phase__body"><span class="dsa-phase__title">2 · Статистика</span><span class="dsa-phase__desc">Вероятности, статвыводы, A/B, causal</span></span>
+</a>
+
+<a class="dsa-phase" href="phase3/m12/index.md">
+<span class="dsa-ring" data-dsa-ring="phase3"></span>
+<span class="dsa-phase__body"><span class="dsa-phase__title">3 · Визуализация</span><span class="dsa-phase__desc">Графики, storytelling</span></span>
+</a>
+
+<a class="dsa-phase" href="phase4/m13/index.md">
+<span class="dsa-ring" data-dsa-ring="phase4"></span>
+<span class="dsa-phase__body"><span class="dsa-phase__title">4 · Machine Learning</span><span class="dsa-phase__desc">Bias-variance, supervised, ловушки</span></span>
+</a>
+
+<a class="dsa-phase" href="phase5/m18/index.md">
+<span class="dsa-ring" data-dsa-ring="phase5"></span>
+<span class="dsa-phase__body"><span class="dsa-phase__title">5 · Deep Learning и AI</span><span class="dsa-phase__desc">Нейросети, Transformers, LLM, копилот</span></span>
+</a>
+
+<a class="dsa-phase" href="phase6/m22/index.md">
+<span class="dsa-ring" data-dsa-ring="phase6"></span>
+<span class="dsa-phase__body"><span class="dsa-phase__title">6 · Production</span><span class="dsa-phase__desc">MLOps, data engineering, бизнес-метрики</span></span>
+</a>
+
+<a class="dsa-phase" href="phase7/m25/index.md">
+<span class="dsa-ring" data-dsa-ring="phase7"></span>
+<span class="dsa-phase__body"><span class="dsa-phase__title">7 · Research-level</span><span class="dsa-phase__desc">Статьи, теория обучения, этика</span></span>
+</a>
+
+</div>
 
 ## С чего начать
 
@@ -27,13 +92,13 @@
 
     [Методика обучения](methodology.md)
 
-- __Вся карта пути__
+- __Повторение и прогресс__
 
     ---
 
-    29 модулей, 8 фаз — от среды разработки до научных статей и специализации.
+    Флешкарты с интервальным повторением и личный дашборд: XP, стрик, кольца по фазам.
 
-    [Программа курса](curriculum.md)
+    [Повторение](review.md) · [Мой прогресс](dashboard.md)
 
 - __Уже что-то умеешь__
 
@@ -45,20 +110,8 @@
 
 </div>
 
-## Как устроен курс
-
-Восемь фаз, выстроенных по логике самой дисциплины, а не по «модности» тем:
-
-| Фаза | О чём | Почему здесь |
-|------|-------|--------------|
-| **0 · Фундамент** | Мышление, среда 2026, Python, математика | Без этого всё остальное — карго-культ |
-| **1 · Данные** | SQL, NumPy, Pandas/Polars, очистка | 80% работы DS — это данные, а не модели |
-| **2 · Статистика** | Вероятности, статвыводы, A/B, causal inference | То, что отличает DS от программиста |
-| **3 · Визуализация** | Графики, storytelling | Невидимый вывод = несделанный вывод |
-| **4 · Machine Learning** | Bias-variance, supervised/unsupervised, ловушки | Модели как инструмент, а не магия |
-| **5 · Deep Learning и AI** | Нейросети, Transformers, LLM, AI-копилот | Современный AI и как им пользоваться |
-| **6 · Production** | MLOps, data engineering, бизнес-метрики | Модель в ноутбуке не приносит денег |
-| **7 · Research-level** | Статьи, теория обучения, этика, специализация | Уровень «двигаешь область вперёд» |
+!!! quote "Принцип курса"
+    Глубина важнее скорости. Человек с правильным мышлением и слабым Python обгонит человека с сильным Python и установкой «accuracy 95%, готово». Сначала — как думать и как не обмануться данными. Потом — инструменты и модели.
 
 ## Что в каждой лекции
 
@@ -66,7 +119,7 @@
 
 - **Зачем этот модуль** — мотивация, без неё знание не держится.
 - **Развёрнутая теория** — каждое понятие объясняется и на пальцах, и формально.
-- **Код на стеке 2026** — рабочие примеры на актуальных инструментах.
+- **Код на стеке 2026** — рабочие примеры, которые можно запустить прямо на странице.
 - **AI-копилот** — как ускорять работу нейросетями и где они ошибаются.
 - **Ловушки** — типичные ошибки, на которых горят даже сеньоры.
 - **Практика** — задачи с нарастающей сложностью и проект в конце.

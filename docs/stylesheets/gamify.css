@@ -1,0 +1,167 @@
+/* DS Academy — геймификация: toast, дашборд-статы, сетка колец, бейджи.
+   Базовый HUD (.dsa-hud / .dsa-hud__item) и .dsa-ring живут в theme.css —
+   здесь только то, чем владеет модуль геймификации. Только токены --dsa-*. */
+
+/* ============================================================= TOAST */
+.dsa-toasts {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+.dsa-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  max-width: 20rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--dsa-surface);
+  border: 1px solid var(--dsa-border);
+  border-left: 3px solid var(--dsa-accent);
+  border-radius: var(--dsa-radius-sm);
+  box-shadow: var(--dsa-shadow-lg);
+  opacity: 0;
+  transform: translateX(16px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.dsa-toast.is-in { opacity: 1; transform: translateX(0); }
+.dsa-toast__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--dsa-accent-soft);
+  color: var(--dsa-accent);
+}
+.dsa-toast__icon svg { width: 18px; height: 18px; }
+.dsa-toast__body { display: flex; flex-direction: column; min-width: 0; }
+.dsa-toast__kicker {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dsa-text-dim);
+}
+.dsa-toast__title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--dsa-text);
+}
+
+/* ====================================================== DASHBOARD */
+/* Крупные статы */
+.dsa-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: var(--dsa-gap);
+  margin: 1.2rem 0 1.8rem;
+}
+.dsa-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+}
+.dsa-stat__val {
+  font-size: 1.9rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--dsa-accent);
+}
+.dsa-stat__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--dsa-text-dim);
+}
+
+/* Сетка колец по фазам */
+.dsa-ringgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: var(--dsa-gap);
+  margin: 1rem 0 1.8rem;
+}
+.dsa-ringcell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 1rem 0.6rem;
+  background: var(--dsa-surface);
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius);
+  box-shadow: var(--dsa-shadow);
+  text-align: center;
+}
+.dsa-ringgrid .dsa-ring { --sz: 66px; }
+.dsa-ringgrid .dsa-ring__val { font-size: 0.84rem; }
+.dsa-ringcell__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--dsa-text-dim);
+  line-height: 1.25;
+}
+
+/* Бейджи */
+.dsa-badges {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: var(--dsa-gap);
+  margin: 1rem 0 1.8rem;
+}
+.dsa-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.4rem;
+  padding: 1.1rem 0.9rem;
+  background: var(--dsa-surface);
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius);
+  box-shadow: var(--dsa-shadow);
+  transition: border-color 0.15s, transform 0.1s;
+}
+.dsa-badge__icon {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: var(--dsa-accent-soft);
+  color: var(--dsa-accent);
+}
+.dsa-badge__icon svg { width: 26px; height: 26px; }
+.dsa-badge__title { font-size: 0.86rem; font-weight: 700; color: var(--dsa-text); }
+.dsa-badge__desc { font-size: 0.72rem; color: var(--dsa-text-dim); line-height: 1.35; }
+.dsa-badge__state {
+  margin-top: 0.2rem;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--dsa-ok);
+}
+.dsa-badge--locked {
+  opacity: 0.55;
+  filter: grayscale(0.7);
+}
+.dsa-badge--locked .dsa-badge__icon { background: var(--dsa-surface-3); color: var(--dsa-text-dim); }
+.dsa-badge--locked .dsa-badge__state { color: var(--dsa-text-dim); }
+
+/* Блок сброса */
+.dsa-reset-block {
+  margin-top: 1rem;
+  padding: 1rem 1.2rem;
+  border: 1px dashed var(--dsa-border-strong);
+  border-radius: var(--dsa-radius);
+  background: var(--dsa-surface-2);
+}
+.dsa-reset-block p { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--dsa-text-dim); }

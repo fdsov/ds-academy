@@ -1,5 +1,14 @@
 (function () {
   "use strict";
+  // Квизы из fenced ```text блока. Синтаксис:
+  //   Q: текст вопроса (необязательный префикс Q:)
+  //   [ ] неверный вариант
+  //   [x] верный вариант
+  //   > пояснение (опц.)
+  //   --- разделитель вопросов
+  // Один [x] -> single-choice (мгновенная подсветка по клику).
+  // Несколько [x] -> multi-select (чекбоксы + кнопка «Проверить»).
+  // Верный ответ начисляет XP через window.DSA (опционально).
 
   function parse(raw) {
     var lines = raw.replace(/\r/g, "").split("\n");
@@ -29,15 +38,38 @@
     return questions;
   }
 
-  function renderQuestion(qd, idx, total) {
+  function award(dkIdx) {
+    if (window.DSA && DSA.award) {
+      try { DSA.award(5, "quiz:" + location.pathname + ":" + dkIdx); } catch (e) {}
+    }
+  }
+
+  function countCorrect(qd) {
+    var n = 0;
+    qd.opts.forEach(function (o) { if (o.correct) n++; });
+    return n;
+  }
+
+  function makeShell(qd, dispIdx, total) {
     var wrap = document.createElement("div");
     wrap.className = "quiz-q";
-
     var head = document.createElement("div");
     head.className = "quiz-q__title";
-    head.textContent = (total > 1 ? (idx + 1) + ". " : "") + qd.q;
+    head.textContent = (total > 1 ? (dispIdx + 1) + ". " : "") + qd.q;
     wrap.appendChild(head);
+    return wrap;
+  }
+  function appendExp(wrap, qd) {
+    if (!qd.exp) return;
+    var e = document.createElement("div");
+    e.className = "quiz-exp";
+    e.textContent = qd.exp;
+    wrap.appendChild(e);
+  }
 
+  // ----- single-choice: мгновенная подсветка по клику -----
+  function renderSingle(qd, dispIdx, total, dkIdx) {
+    var wrap = makeShell(qd, dispIdx, total);
     var opts = document.createElement("div");
     opts.className = "quiz-opts";
     var answered = false;
@@ -51,8 +83,10 @@
         if (answered) return;
         answered = true;
         opts.classList.add("answered");
-        if (o.correct) b.classList.add("correct");
-        else {
+        if (o.correct) {
+          b.classList.add("correct");
+          award(dkIdx);
+        } else {
           b.classList.add("wrong");
           Array.prototype.forEach.call(opts.children, function (c, i) {
             if (qd.opts[i].correct) c.classList.add("correct");
@@ -62,12 +96,7 @@
         verdict.className = "quiz-verdict " + (o.correct ? "ok" : "no");
         verdict.textContent = o.correct ? "Верно" : "Неверно";
         wrap.appendChild(verdict);
-        if (qd.exp) {
-          var e = document.createElement("div");
-          e.className = "quiz-exp";
-          e.textContent = qd.exp;
-          wrap.appendChild(e);
-        }
+        appendExp(wrap, qd);
       });
       opts.appendChild(b);
     });
@@ -75,7 +104,80 @@
     return wrap;
   }
 
-  function build(raw) {
+  // ----- multi-select: чекбоксы + «Проверить» -----
+  function renderMulti(qd, dispIdx, total, dkIdx) {
+    var wrap = makeShell(qd, dispIdx, total);
+    var opts = document.createElement("div");
+    opts.className = "quiz-opts quiz-opts--multi";
+    var solved = false;
+    var buttons = [];
+
+    qd.opts.forEach(function (o) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "quiz-opt quiz-opt--multi";
+      b.textContent = o.text;
+      b.addEventListener("click", function () {
+        if (solved) return;
+        b.classList.toggle("is-selected");
+      });
+      buttons.push(b);
+      opts.appendChild(b);
+    });
+    wrap.appendChild(opts);
+
+    var verdict = document.createElement("div");
+    verdict.className = "quiz-verdict";
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "quiz-check dsa-btn dsa-btn--primary";
+    btn.textContent = "Проверить";
+
+    btn.addEventListener("click", function () {
+      if (solved) return;
+      var anySelected = false;
+      buttons.forEach(function (b) {
+        b.classList.remove("correct", "wrong");
+        if (b.classList.contains("is-selected")) anySelected = true;
+      });
+      if (!anySelected) {
+        verdict.className = "quiz-verdict no";
+        verdict.textContent = "Выбери хотя бы один вариант";
+        return;
+      }
+      var exact = true;
+      qd.opts.forEach(function (o, i) {
+        var sel = buttons[i].classList.contains("is-selected");
+        if (sel && o.correct) buttons[i].classList.add("correct");
+        else if (sel && !o.correct) { buttons[i].classList.add("wrong"); exact = false; }
+        else if (!sel && o.correct) { exact = false; }
+      });
+      if (exact) {
+        solved = true;
+        opts.classList.add("answered");
+        verdict.className = "quiz-verdict ok";
+        verdict.textContent = "Верно";
+        btn.disabled = true;
+        appendExp(wrap, qd);
+        award(dkIdx);
+      } else {
+        verdict.className = "quiz-verdict no";
+        verdict.textContent = "Пока не точно — поправь выбор";
+      }
+    });
+
+    wrap.appendChild(btn);
+    wrap.appendChild(verdict);
+    return wrap;
+  }
+
+  function renderQuestion(qd, dispIdx, total, dkIdx) {
+    return countCorrect(qd) > 1
+      ? renderMulti(qd, dispIdx, total, dkIdx)
+      : renderSingle(qd, dispIdx, total, dkIdx);
+  }
+
+  function build(raw, base) {
     var questions = parse(raw);
     if (!questions.length) return null;
     var box = document.createElement("div");
@@ -85,8 +187,9 @@
     label.textContent = "Квиз";
     box.appendChild(label);
     questions.forEach(function (qd, i) {
-      box.appendChild(renderQuestion(qd, i, questions.length));
+      box.appendChild(renderQuestion(qd, i, questions.length, base + i));
     });
+    box._qcount = questions.length;
     return box;
   }
 
@@ -95,14 +198,16 @@
   }
 
   function initQuizzes() {
+    var base = 0;
     document.querySelectorAll("div.language-text").forEach(function (container) {
       if (container.dataset.quizDone) return;
       var code = container.querySelector("code");
       if (!code) return;
       var raw = code.textContent || "";
       if (!isQuiz(raw)) return;
-      var widget = build(raw);
+      var widget = build(raw, base);
       if (!widget) return;
+      base += widget._qcount || 0;
       container.dataset.quizDone = "1";
       container.replaceWith(widget);
     });
