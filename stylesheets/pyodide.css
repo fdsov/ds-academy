@@ -1,0 +1,125 @@
+/* DS Academy — Python в браузере (Pyodide).
+   Стили панели Run и заданий pyexercise. Только токены из theme.css. */
+
+/* ============================================================== RUN PANEL */
+.dsa-run {
+  margin: 0.4rem 0 1.1rem;
+}
+.dsa-run__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.dsa-run-btn {
+  font-size: 0.78rem;
+  padding: 0.45rem 1rem;
+}
+
+/* Область вывода — моноширинная консоль */
+.dsa-run-out {
+  margin-top: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  max-height: 22rem;
+  overflow: auto;
+  background: var(--dsa-surface-2);
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius-sm);
+  font-family: var(--md-code-font-family, "JetBrains Mono", monospace);
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--dsa-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 4;
+}
+.dsa-run-out__err { color: var(--dsa-danger); }
+.dsa-run-out__info { color: var(--dsa-text-dim); font-style: italic; }
+.dsa-run-out__err,
+.dsa-run-out__info { white-space: pre-wrap; }
+
+.dsa-run-fig {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.5rem 0;
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius-sm);
+  background: #fff;
+}
+
+/* ============================================================== PYEXERCISE */
+.dsa-pyex {
+  margin: 1rem 0 1.4rem;
+}
+.dsa-pyex__label {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dsa-accent);
+  margin-bottom: 0.6rem;
+}
+.dsa-pyex-code {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.85rem;
+  background: var(--dsa-surface-2);
+  border: 1px solid var(--dsa-border-strong);
+  border-radius: var(--dsa-radius-sm);
+  color: var(--dsa-text);
+  font-family: var(--md-code-font-family, "JetBrains Mono", monospace);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  tab-size: 4;
+  resize: vertical;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.dsa-pyex-code:focus {
+  outline: none;
+  border-color: var(--dsa-accent);
+  box-shadow: 0 0 0 3px var(--dsa-accent-soft);
+}
+.dsa-pyex__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+}
+.dsa-pyex__check,
+.dsa-pyex__reset {
+  font-size: 0.78rem;
+  padding: 0.45rem 1rem;
+}
+
+.dsa-pyex__verdict {
+  margin-top: 0.7rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--dsa-radius-sm);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.dsa-pyex__verdict.is-run {
+  background: var(--dsa-accent-soft);
+  color: var(--dsa-accent);
+}
+.dsa-pyex__verdict.is-ok {
+  background: var(--dsa-ok-soft);
+  color: var(--dsa-ok);
+}
+.dsa-pyex__verdict.is-bad {
+  background: rgba(198, 40, 40, 0.12);
+  color: var(--dsa-danger);
+}
+
+@media screen and (max-width: 44.9375em) {
+  .dsa-run-btn,
+  .dsa-pyex__check,
+  .dsa-pyex__reset { padding: 0.42rem 0.85rem; }
+  .dsa-run-out { font-size: 0.7rem; }
+  .dsa-pyex-code { font-size: 0.74rem; }
+}

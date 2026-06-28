@@ -1,0 +1,406 @@
+/* DS Academy — platform theme (redesign).
+   Загружается ПЕРЕД extra.css. Новые классы .dsa-* не конфликтуют со старыми
+   (.dsa-steprail/.dsa-nav из extra.css больше не используются — step-nav.js снят). */
+
+/* ============================================================= TOKENS */
+:root {
+  --md-primary-fg-color: #3b3f8c;
+  --md-primary-fg-color--dark: #2a2d6b;
+  --md-accent-fg-color: #5b61d6;
+
+  --dsa-accent: #5b61d6;
+  --dsa-accent-strong: #3b3f8c;
+  --dsa-accent-soft: rgba(91, 97, 214, 0.12);
+  --dsa-accent-grad: linear-gradient(135deg, #5b61d6 0%, #7c5cff 55%, #9b6bff 100%);
+  --dsa-ok: #2e7d32;
+  --dsa-ok-soft: rgba(46, 125, 50, 0.14);
+  --dsa-warn: #ef6c00;
+  --dsa-danger: #c62828;
+
+  --dsa-surface: #ffffff;
+  --dsa-surface-2: #f6f7fb;
+  --dsa-surface-3: #eef0f7;
+  --dsa-border: #e6e8f0;
+  --dsa-border-strong: #d3d7e6;
+  --dsa-text: #1f2333;
+  --dsa-text-dim: #5b6072;
+
+  --dsa-radius: 14px;
+  --dsa-radius-sm: 10px;
+  --dsa-radius-lg: 20px;
+  --dsa-shadow: 0 1px 2px rgba(15, 18, 45, 0.04), 0 6px 22px rgba(15, 18, 45, 0.06);
+  --dsa-shadow-lg: 0 12px 44px rgba(15, 18, 45, 0.14);
+  --dsa-gap: 1rem;
+  --dsa-gap-lg: 1.6rem;
+  --dsa-maxw: 52rem;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-accent-fg-color: #8b90ff;
+  --dsa-accent: #8b90ff;
+  --dsa-accent-strong: #6e74e8;
+  --dsa-accent-soft: rgba(139, 144, 255, 0.16);
+  --dsa-ok: #66bb6a;
+  --dsa-ok-soft: rgba(102, 187, 106, 0.16);
+  --dsa-warn: #ffa726;
+  --dsa-danger: #ef5350;
+
+  --dsa-surface: #1c1f2e;
+  --dsa-surface-2: #232739;
+  --dsa-surface-3: #2b3045;
+  --dsa-border: #2f344a;
+  --dsa-border-strong: #3b4160;
+  --dsa-text: #e7e9f3;
+  --dsa-text-dim: #9aa0b8;
+  --dsa-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 28px rgba(0, 0, 0, 0.36);
+  --dsa-shadow-lg: 0 14px 50px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================================ BASE TUNE */
+.md-typeset {
+  --md-typeset-a-color: var(--dsa-accent);
+}
+.md-typeset h1 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.md-typeset h2,
+.md-typeset h3 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+/* Комфортная ширина чтения на десктопе */
+@media screen and (min-width: 76.25em) {
+  .md-content {
+    max-width: calc(var(--dsa-maxw) + 4rem);
+    margin: 0 auto;
+  }
+}
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: var(--dsa-radius-sm);
+  border-width: 1px;
+  box-shadow: var(--dsa-shadow);
+  font-size: 0.78rem;
+}
+
+/* =========================================================== COMPONENTS */
+.dsa-card {
+  background: var(--dsa-surface);
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius);
+  box-shadow: var(--dsa-shadow);
+  padding: 1.2rem 1.3rem;
+}
+.dsa-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.62rem 1.25rem;
+  border-radius: var(--dsa-radius-sm);
+  border: 1px solid transparent;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.05s, box-shadow 0.15s;
+}
+.dsa-btn:active { transform: translateY(1px); }
+.dsa-btn--primary {
+  background: var(--dsa-accent);
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(91, 97, 214, 0.32);
+}
+.dsa-btn--primary:hover { background: var(--dsa-accent-strong); color: #fff; }
+.dsa-btn--ghost {
+  background: var(--dsa-surface);
+  border-color: var(--dsa-border-strong);
+  color: var(--dsa-text-dim);
+}
+.dsa-btn--ghost:hover { border-color: var(--dsa-accent); color: var(--dsa-accent); }
+.dsa-btn[disabled] { opacity: 0.5; cursor: default; pointer-events: none; }
+
+.dsa-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  background: var(--dsa-accent-soft);
+  color: var(--dsa-accent);
+}
+
+/* Прогресс-кольцо (SVG заполняется JS через --p: 0..100) */
+.dsa-ring {
+  --p: 0;
+  --sz: 44px;
+  width: var(--sz);
+  height: var(--sz);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: conic-gradient(var(--dsa-accent) calc(var(--p) * 1%), var(--dsa-surface-3) 0);
+  position: relative;
+}
+.dsa-ring::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--dsa-surface);
+}
+.dsa-ring__val {
+  position: relative;
+  z-index: 1;
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: var(--dsa-text);
+}
+
+/* ====================================================== HEADER WIDGET */
+/* Монтируется overrides/main.html: XP + стрик в топбаре */
+.dsa-hud {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-left: 0.4rem;
+}
+.dsa-hud__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--md-primary-bg-color, #fff);
+  opacity: 0.95;
+  white-space: nowrap;
+}
+.dsa-hud__item svg { width: 15px; height: 15px; }
+@media screen and (max-width: 59.9375em) { .dsa-hud { display: none; } }
+
+/* Прогресс-бар курса над деревом nav (расширяет старый .dsa-counter) */
+.dsa-counter { padding: 0.6rem 0.9rem 0.8rem; margin: 0 0.4rem 0.5rem; }
+
+/* ============================================================== DECK */
+/* Степпер: один экран-карточка за раз. Markup строит lesson-deck.js. */
+.dsa-deck-page .md-content__inner > :not(.dsa-deckhead):not(.dsa-deck):not(.dsa-deckfoot) {
+  /* исходные узлы перенесены внутрь карточек JS-ом; страховка от мелькания */
+}
+.dsa-deckhead {
+  margin-bottom: 1.2rem;
+}
+.dsa-deckhead__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+/* Лента под-шагов модуля (бывшая steprail, новый класс) */
+.dsa-rail {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.2rem 0 0.4rem;
+}
+.dsa-rail__title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--dsa-text-dim);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.dsa-rail__title:hover { color: var(--dsa-accent); }
+.dsa-rail__track {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  scrollbar-width: thin;
+}
+.dsa-rail__track::-webkit-scrollbar { height: 4px; }
+.dsa-rail__track::-webkit-scrollbar-thumb { background: var(--dsa-border-strong); border-radius: 999px; }
+.dsa-pillx {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.9rem;
+  height: 1.9rem;
+  padding: 0 0.5rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  border-radius: 9px;
+  border: 1px solid var(--dsa-border-strong);
+  background: var(--dsa-surface);
+  color: var(--dsa-text-dim);
+  text-decoration: none;
+  transition: all 0.12s;
+}
+.dsa-pillx:hover { border-color: var(--dsa-accent); color: var(--dsa-accent); }
+.dsa-pillx.is-done { border-color: var(--dsa-ok); color: var(--dsa-ok); background: var(--dsa-ok-soft); }
+.dsa-pillx.is-current { background: var(--dsa-accent); border-color: var(--dsa-accent); color: #fff; }
+.dsa-pillx--w { border-style: dashed; }
+
+/* Точки-карточки внутри под-шага */
+.dsa-dots {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.3rem 0 1.1rem;
+}
+.dsa-dots__label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--dsa-text-dim);
+  margin-right: 0.3rem;
+}
+.dsa-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--dsa-surface-3);
+  border: 1px solid var(--dsa-border-strong);
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.dsa-dot.is-done { background: var(--dsa-accent); border-color: var(--dsa-accent); }
+.dsa-dot.is-current {
+  background: var(--dsa-accent);
+  border-color: var(--dsa-accent);
+  transform: scale(1.45);
+  box-shadow: 0 0 0 3px var(--dsa-accent-soft);
+}
+
+/* Карточки */
+.dsa-deck { position: relative; }
+.dsa-deck__card { display: none; animation: dsaFade 0.28s ease; }
+.dsa-deck__card.is-active { display: block; }
+.dsa-deck__card > :first-child { margin-top: 0; }
+@keyframes dsaFade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Нижняя навигация деска */
+.dsa-deckfoot {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 2.4rem 0 0.5rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--dsa-border);
+}
+.dsa-deckfoot .dsa-btn--next { margin-left: auto; }
+.dsa-deckfoot__hint {
+  font-size: 0.72rem;
+  color: var(--dsa-text-dim);
+}
+/* Прячем дублирующий футер Material и старую ручную отметку на страницах-шагах */
+.dsa-deck-page .md-footer__inner { display: none; }
+.dsa-deck-page .lesson-progress { display: none; }
+@media screen and (max-width: 44.9375em) {
+  .dsa-btn { padding: 0.55rem 0.95rem; }
+  .dsa-deckfoot__hint { display: none; }
+}
+
+/* =========================================================== SIDEBAR */
+/* Силлабус как «учебный план» */
+.md-nav--primary .md-nav__title { font-weight: 800; }
+[dir] .md-nav__item .md-nav__link--active {
+  color: var(--dsa-accent);
+  font-weight: 700;
+}
+
+/* ============================================================ LANDING */
+.dsa-hero {
+  position: relative;
+  margin: 0.4rem 0 2rem;
+  padding: 2.4rem 2rem 2.2rem;
+  border-radius: var(--dsa-radius-lg);
+  color: #fff;
+  background: var(--dsa-accent-grad);
+  box-shadow: var(--dsa-shadow-lg);
+  overflow: hidden;
+}
+.dsa-hero::after {
+  content: "";
+  position: absolute;
+  right: -60px;
+  top: -60px;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+}
+.dsa-hero h1 { color: #fff; margin: 0 0 0.6rem; font-size: 2.1rem; }
+.dsa-hero p { color: rgba(255, 255, 255, 0.92); font-size: 0.95rem; max-width: 40rem; margin: 0 0 1.3rem; }
+.dsa-hero__cta { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+.dsa-hero .dsa-btn--primary { background: #fff; color: var(--dsa-accent-strong); box-shadow: none; }
+.dsa-hero .dsa-btn--primary:hover { background: rgba(255, 255, 255, 0.9); color: var(--dsa-accent-strong); }
+.dsa-hero .dsa-btn--ghost { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.4); color: #fff; }
+.dsa-hero .dsa-btn--ghost:hover { background: rgba(255, 255, 255, 0.22); border-color: #fff; color: #fff; }
+.dsa-hero__stats { display: flex; gap: 1.8rem; margin-top: 1.6rem; flex-wrap: wrap; }
+.dsa-hero__stat b { display: block; font-size: 1.5rem; font-weight: 800; line-height: 1; }
+.dsa-hero__stat span { font-size: 0.72rem; opacity: 0.85; }
+
+/* Карта фаз */
+.dsa-phases {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--dsa-gap);
+  margin: 1.2rem 0 2rem;
+}
+.dsa-phase {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  background: var(--dsa-surface);
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius);
+  box-shadow: var(--dsa-shadow);
+  padding: 1.05rem 1.1rem;
+  text-decoration: none;
+  color: var(--dsa-text);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.dsa-phase:hover { border-color: var(--dsa-accent); box-shadow: var(--dsa-shadow-lg); transform: translateY(-2px); }
+.dsa-phase__num {
+  flex: 0 0 auto;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 0.95rem;
+  background: var(--dsa-accent-soft);
+  color: var(--dsa-accent);
+}
+.dsa-phase__body { min-width: 0; }
+.dsa-phase__title { font-weight: 700; font-size: 0.9rem; margin-bottom: 0.15rem; }
+.dsa-phase__desc { font-size: 0.74rem; color: var(--dsa-text-dim); line-height: 1.4; }
+
+/* Карточки-фичи на лендинге (переиспользуем grid cards Material, усиливаем) */
+.md-typeset .grid.cards > ul > li {
+  border-radius: var(--dsa-radius);
+  border-color: var(--dsa-border);
+  box-shadow: var(--dsa-shadow);
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.1s;
+}
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--dsa-accent);
+  box-shadow: var(--dsa-shadow-lg);
+  transform: translateY(-2px);
+}
+
+/* Бейдж фазы под заголовком лекции (старый класс из extra.css — синхронизируем токен) */
+.lecture-meta { border-color: var(--dsa-accent); color: var(--dsa-accent); }

@@ -1,0 +1,344 @@
+:root {
+  --md-primary-fg-color: #3b3f8c;
+  --md-primary-fg-color--dark: #2a2d6b;
+  --md-accent-fg-color: #5b61d6;
+}
+
+.md-typeset h1 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.md-typeset .admonition {
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+
+/* Карточки на главной */
+.grid.cards > ul > li {
+  border-radius: 10px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.grid.cards > ul > li:hover {
+  border-color: var(--md-accent-fg-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+/* Бейдж фазы под заголовком лекции */
+.lecture-meta {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--md-accent-fg-color);
+  border: 1px solid var(--md-accent-fg-color);
+  border-radius: 999px;
+  padding: 0.1rem 0.7rem;
+  margin-bottom: 0.6rem;
+}
+
+.md-typeset table:not([class]) {
+  font-size: 0.74rem;
+}
+
+/* Stepik-стиль: отметка прохождения урока */
+.lesson-progress {
+  display: inline-block;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.35rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid var(--md-accent-fg-color);
+  background: transparent;
+  color: var(--md-accent-fg-color);
+  margin: 0.1rem 0 1.4rem;
+  transition: background 0.15s, color 0.15s;
+}
+.lesson-progress:hover {
+  background: var(--md-accent-fg-color);
+  color: #fff;
+}
+.lesson-progress.done {
+  background: #2e7d32;
+  border-color: #2e7d32;
+  color: #fff;
+}
+
+/* Зелёная метка пройденного урока в левом сайдбаре */
+.md-nav__link.dsa-done::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2e7d32;
+  margin-left: 0.45rem;
+  flex: 0 0 auto;
+}
+
+/* Общий прогресс-бар курса над деревом навигации */
+.dsa-counter {
+  padding: 0.5rem 0.8rem 0.7rem;
+  margin: 0 0.4rem 0.4rem;
+}
+.dsa-counter__label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.dsa-counter__bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--md-default-fg-color--lightest);
+  overflow: hidden;
+}
+.dsa-counter__bar > span {
+  display: block;
+  height: 100%;
+  background: #2e7d32;
+  transition: width 0.25s;
+}
+
+/* Stepik-стиль: лента шагов модуля над уроком */
+.dsa-steprail {
+  margin: 0 0 1.4rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+.dsa-steprail__title {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--md-default-fg-color--light);
+  text-decoration: none;
+  margin-bottom: 0.55rem;
+}
+.dsa-steprail__title:hover { color: var(--md-accent-fg-color); }
+.dsa-steprail__track {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding-bottom: 0.3rem;
+  scrollbar-width: thin;
+}
+.dsa-steprail__track::-webkit-scrollbar { height: 4px; }
+.dsa-steprail__track::-webkit-scrollbar-thumb {
+  background: var(--md-default-fg-color--lighter);
+  border-radius: 999px;
+}
+.dsa-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--md-default-fg-color--lighter);
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color--light);
+  text-decoration: none;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.dsa-pill:hover { border-color: var(--md-accent-fg-color); color: var(--md-accent-fg-color); }
+.dsa-pill.is-done { border-color: #2e7d32; color: #2e7d32; }
+.dsa-pill.is-done::after { content: "✓"; margin-left: 0.2rem; font-size: 0.7rem; }
+.dsa-pill.is-current {
+  background: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+  color: #fff;
+}
+.dsa-pill.is-current.is-done::after { content: ""; margin: 0; }
+.dsa-pill--w { border-style: dashed; font-weight: 700; }
+
+/* Крупные кнопки навигации урока (Stepik/ЯП) */
+.dsa-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 2.6rem 0 0.5rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+.dsa-nav__btn {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 0.7rem 1.4rem;
+  border-radius: 10px;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.05s;
+}
+.dsa-nav__btn--prev {
+  border: 1px solid var(--md-default-fg-color--lighter);
+  color: var(--md-default-fg-color--light);
+  background: var(--md-default-bg-color);
+}
+.dsa-nav__btn--prev:hover { border-color: var(--md-accent-fg-color); color: var(--md-accent-fg-color); }
+.dsa-nav__btn--next {
+  margin-left: auto;
+  background: var(--md-primary-fg-color);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(59, 63, 140, 0.25);
+}
+.dsa-nav__btn--next:hover { background: var(--md-accent-fg-color); }
+.dsa-nav__btn:active { transform: translateY(1px); }
+
+/* На страницах-шагах прячем дублирующие стрелки футера Material */
+.dsa-step-page .md-footer__inner { display: none; }
+
+@media screen and (max-width: 44.9375em) {
+  .dsa-nav__btn { padding: 0.6rem 1rem; font-size: 0.8rem; }
+}
+
+/* Интерактивные квизы */
+.quiz {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 10px;
+  padding: 0.9rem 1.1rem 1.1rem;
+  margin: 1.2rem 0;
+  background: var(--md-code-bg-color);
+}
+.quiz__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--md-accent-fg-color);
+  margin-bottom: 0.6rem;
+}
+.quiz-q { margin-bottom: 1.1rem; }
+.quiz-q:last-child { margin-bottom: 0; }
+.quiz-q__title {
+  font-weight: 600;
+  font-size: 0.82rem;
+  margin-bottom: 0.55rem;
+  line-height: 1.45;
+}
+.quiz-opts { display: flex; flex-direction: column; gap: 0.4rem; }
+.quiz-opt {
+  text-align: left;
+  font-size: 0.78rem;
+  font-family: inherit;
+  padding: 0.5rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--md-default-fg-color--lighter);
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.quiz-opt:hover { border-color: var(--md-accent-fg-color); }
+.quiz-opts.answered .quiz-opt { cursor: default; opacity: 0.85; }
+.quiz-opt.correct {
+  border-color: #2e7d32;
+  background: rgba(46, 125, 50, 0.14);
+  color: var(--md-default-fg-color);
+  opacity: 1;
+}
+.quiz-opt.wrong {
+  border-color: #c62828;
+  background: rgba(198, 40, 40, 0.14);
+  opacity: 1;
+}
+.quiz-verdict {
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-top: 0.5rem;
+}
+.quiz-verdict.ok { color: #2e7d32; }
+.quiz-verdict.no { color: #c62828; }
+.quiz-exp {
+  font-size: 0.74rem;
+  margin-top: 0.3rem;
+  color: var(--md-default-fg-color--light);
+  line-height: 1.5;
+}
+
+/* Задачи с числовым ответом (Stepik-style auto-check) */
+.task {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-left: 3px solid var(--md-accent-fg-color);
+  border-radius: 10px;
+  padding: 0.9rem 1.1rem 1.1rem;
+  margin: 1.2rem 0;
+  background: var(--md-code-bg-color);
+}
+.task-group .task { margin: 0.8rem 0; }
+.task__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--md-accent-fg-color);
+  margin-bottom: 0.6rem;
+}
+.task-q__title {
+  font-weight: 600;
+  font-size: 0.82rem;
+  margin-bottom: 0.7rem;
+  line-height: 1.5;
+}
+.task-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.task-input {
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.82rem;
+  padding: 0.45rem 0.7rem;
+  width: 9rem;
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--md-default-fg-color--lighter);
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color);
+  transition: border-color 0.12s;
+}
+.task-input:focus { outline: none; border-color: var(--md-accent-fg-color); }
+.task-input.is-ok { border-color: #2e7d32; background: rgba(46, 125, 50, 0.12); }
+.task-input.is-no { border-color: #c62828; }
+.task-input:disabled { opacity: 0.9; }
+.task-unit { font-size: 0.82rem; color: var(--md-default-fg-color--light); }
+.task-btn {
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.45rem 0.95rem;
+  border-radius: 8px;
+  border: 1px solid var(--md-accent-fg-color);
+  background: var(--md-accent-fg-color);
+  color: var(--md-primary-bg-color, #fff);
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+.task-btn:hover { filter: brightness(1.08); }
+.task-btn:disabled { cursor: default; opacity: 0.55; }
+.task-btn:active { transform: translateY(1px); }
+.task-verdict { font-size: 0.74rem; font-weight: 700; margin-top: 0.5rem; min-height: 0.9rem; }
+.task-verdict.ok { color: #2e7d32; }
+.task-verdict.no { color: #c62828; }
+.task-verdict.near { color: #ef6c00; }
+.task-exp {
+  font-size: 0.74rem;
+  margin-top: 0.45rem;
+  color: var(--md-default-fg-color--light);
+  line-height: 1.55;
+}
+.task-reveal {
+  margin-top: 0.55rem;
+  font-family: inherit;
+  font-size: 0.72rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 7px;
+  border: 1px solid var(--md-default-fg-color--lighter);
+  background: transparent;
+  color: var(--md-default-fg-color--light);
+  cursor: pointer;
+}
+.task-reveal:hover { border-color: var(--md-accent-fg-color); color: var(--md-accent-fg-color); }
